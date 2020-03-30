@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+"http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+<hibernate-mapping>
+  <class name="net.tc.isma.utils.Autocountx" table="AUTOCOUNTX">
+    <id column="MODULE" name="module" type="java.lang.String">
+      <generator class="assigned"/>
+    </id>
+    <property column="APPLICATION" length="255" name="application" type="java.lang.String"/>
+    <property column="ID" length="10" name="id" type="java.lang.String"/>
+    <!--property column="MODULE" length="255" name="module" type="java.lang.String"/-->
+    <property column="VAL" length="50" name="val" not-null="true" type="java.lang.String"/>
+  </class>
+</hibernate-mapping>

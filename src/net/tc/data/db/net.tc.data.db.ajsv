@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--AgileJ Ltd. (http://www.agilej.com)--><ajsv>
+    <diagram creationDate="2015-Nov-17 16:20" licenseGrade="evaluation" licenseeName="anon" licenseeOrganization="unknown" populationMethod="manual" version="1.8.3.v20151019-2113">
+        <filterScript>
+
+// no filter script yet defined for this class diagram
+// use CTRL+SPACE for completion suggestions
+
+</filterScript>
+        <class className="net.tc.data.db.Table" project="stresstool" xLocation="2312" yLocation="169"/>
+        <class className="net.tc.data.db.IndexMeta" project="stresstool" xLocation="3075" yLocation="1095"/>
+        <class className="net.tc.data.db.Index" project="stresstool" xLocation="1571" yLocation="453"/>
+        <class className="net.tc.data.db.PartitionDefinition" project="stresstool" xLocation="633" yLocation="520"/>
+        <class className="net.tc.data.db.Attribute" project="stresstool" xLocation="1694" yLocation="1581"/>
+        <class className="net.tc.data.db.Schema" project="stresstool" xLocation="2257" yLocation="1898"/>
+        <class className="net.tc.data.db.SubPartition" project="stresstool" xLocation="822" yLocation="1603"/>
+        <class className="net.tc.data.db.PrimaryKey" project="stresstool" xLocation="3081" yLocation="531"/>
+        <class className="net.tc.data.db.Partition" project="stresstool" xLocation="385" yLocation="1423"/>
+        <class className="net.tc.data.db.Row" project="stresstool" xLocation="3130" yLocation="100"/>
+        <class className="net.tc.data.db.view" project="stresstool" xLocation="1284" yLocation="1399"/>
+    </diagram>
+</ajsv>
