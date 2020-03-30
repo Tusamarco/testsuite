@@ -30,13 +30,17 @@ public class MySQLConnectionTest {
 
 	public static void main(String[] args) {
 
-		if (args.length == 0 || (args.length >= 1 && args[0].indexOf("help") > -1))
+		if (args.length == 0 
+				|| args.length > 1
+				|| (args.length >= 1 && args[0].indexOf("help") > -1))
 			showHelp();
 
+		String[] argsLoc = args[0].replaceAll(" ","").split(",");
+		
 		MySQLConnectionTest test = new MySQLConnectionTest();
 		test.generateConfig(defaultsConnection);
 		
-		test.init(args);
+		test.init(argsLoc);
 		
 		test.setConnectionProvider(new ConnectionProvider(test.getConfig()));
 
@@ -195,7 +199,7 @@ public class MySQLConnectionTest {
 		
 		
 		
-		setConnectionProvider(new ConnectionProvider(getConfig()));
+//		setConnectionProvider(new ConnectionProvider(getConfig()));
 		
 		
 		this.setLoops((this.getConfig().get("loops")!=null)
@@ -223,20 +227,22 @@ public class MySQLConnectionTest {
 		StringBuffer sb = new StringBuffer();
 		sb.append("******************************************\n");
 		sb.append("DB Parameters to use\n");
-		sb.append("--url [--url=jdbc:mysql://127.0.0.1:3306]\n");
-		sb.append("--user [--user=test_user]\n");
-		sb.append("--password [--password=test_pw]\n");
-		sb.append("--parameters [--parameters=&useSSL=false&autoReconnect=true]\n");
-		sb.append("--schema [--schema=test]\n");
+		sb.append("Parameters are COMMA separated and the whole set must be pass as string\n");
+		sb.append("IE java -Xms2G -Xmx3G -classpath \"./*:./lib/*\" net.tc.testsuite.MySQLConnectionTest 'loops=10,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306' \n");
+		sb.append("url [url=jdbc:mysql://127.0.0.1:3306]\n");
+		sb.append("user [user=test_user]\n");
+		sb.append("password [password=test_pw]\n");
+		sb.append("parameters [parameters=&useSSL=false&autoReconnect=true]\n");
+		sb.append("schema [schema=test]\n");
 		sb.append("\n*****************************************\nApplication Parameters \n");
-		sb.append("--loops [--loops=50\n");
-		sb.append("--sleep [--sleep=0]\n");
-		sb.append("--verbose [--verbose=false]\n");
-		sb.append("--summary [--summary=false]\n");
-		sb.append("--printConnectionTime [--printConnectionTime=true]\n");
+		sb.append("loops [loops=50\n");
+		sb.append("sleep [sleep=0]\n");
+		sb.append("verbose [verbose=false]\n");
+		sb.append("summary [summary=false]\n");
+		sb.append("printConnectionTime [printConnectionTime=true]\n");
 
 		sb.append("\n\n****************************************\n Optional ");
-		sb.append("--selectForceAutocommitOff [--selectForceAutocommitOff=true]\n\n");
+		sb.append("selectForceAutocommitOff [selectForceAutocommitOff=true]\n\n");
 		System.out.print(sb.toString());
 		System.exit(0);
 
@@ -250,16 +256,15 @@ public class MySQLConnectionTest {
 		Map<String, Object> config = new HashMap();
 		for (String entry : args) {
 			
-			if(entry.indexOf("parameters") > 0) {
-				this.generateParameters(entry.replace("--parameters=", ""));
-				config.put("parameters", this.getParameters());
+			if(entry.indexOf("parameters") > -1) {
+				this.generateParameters(entry.replace("parameters=", ""));
 			}
 			else {
-				String keyValue[] = entry.replaceAll("--", "").split("=");
+				String keyValue[] = entry.split("=");
 				config.put(keyValue[0], keyValue[1]);
 			}
 		}
-
+		config.put("parameters", this.getParameters());
 		return config;
 	}
 
