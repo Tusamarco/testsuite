@@ -236,7 +236,7 @@ public class MySQLConnectionTest {
 		sb.append("--printConnectionTime [--printConnectionTime=true]\n");
 
 		sb.append("\n\n****************************************\n Optional ");
-		sb.append("--selectForceAutocommitOff [--selectForceAutocommitOff=true]");
+		sb.append("--selectForceAutocommitOff [--selectForceAutocommitOff=true]\n\n");
 		System.out.print(sb.toString());
 		System.exit(0);
 
