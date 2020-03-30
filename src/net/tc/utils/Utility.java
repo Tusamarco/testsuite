@@ -650,6 +650,18 @@ import javax.imageio.ImageIO;
 	   return sb.toString();   
    }
    
+   public static String formatNumberToPrint(int length, String number ) {
+		StringBuilder sb = new StringBuilder();
+		
+		while (sb.length() < (length - number.length())) {
+			sb.append(" ");
+		}
+		sb.append(number);
+	   
+		
+	   return sb.toString();   
+   }
+   
    
    
 }
