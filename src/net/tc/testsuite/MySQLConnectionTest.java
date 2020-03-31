@@ -68,6 +68,14 @@ public class MySQLConnectionTest {
 			}
 			
 			for(int iLoop = 0; iLoop <= this.getLoops(); iLoop++) {
+				if(getSleep() > 0 ) {
+					try {
+						Thread.sleep(getSleep());
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
 				
 				startOpenConenction = System.nanoTime();
 				conn = this.getConnectionProvider().getTesteMySQLConnection();
