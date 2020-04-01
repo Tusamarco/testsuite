@@ -12,48 +12,51 @@ import java.util.Map;
 import net.tc.data.db.ConnectionProvider;
 import net.tc.utils.Utility;
 
-public class MySQLConnectionTest {
+public class MySQLConnectionTest extends TestBase{
 
-	ConnectionProvider connectionProvider = null;
-	Map config = null;
-	int loops = 50;
-	int sleep = 0;
-	boolean verbose = false;
-	boolean summary = false;
 	boolean printConnectionTime = true;
-	static String defaultsConnection = "&url=jdbc:mysql://127.0.0.1:3306&user=test_user&password=test_password&schema=test";
-	static String defaultParameters = "&useSSL=false&autoReconnect=true";
-	Map parameters = new HashMap();
 	ArrayList startConnTimes = new ArrayList();
 	ArrayList endConnTimes = new ArrayList();
 	int formattingLenghtForNano = 15;
-	DecimalFormat df2 = new DecimalFormat( "#,###,###,##0.00" );
-	DecimalFormat dfCSV = new DecimalFormat( "#.00" );
-	boolean reportCSV = false;
 
 	public static void main(String[] args) {
-
+		MySQLConnectionTest test = new MySQLConnectionTest();
+		
 		if (args.length == 0 
 				|| args.length > 1
-				|| (args.length >= 1 && args[0].indexOf("help") > -1))
-			showHelp();
+				|| (args.length >= 1 && args[0].indexOf("help") > -1)) {
+			
+			System.out.println(test.showHelp());
+			System.exit(0);
+		}
 
+		
 		String[] argsLoc = args[0].replaceAll(" ","").split(",");
 		
-		MySQLConnectionTest test = new MySQLConnectionTest();
+		
 		test.generateConfig(defaultsConnection);
 		
 		test.init(argsLoc);
+		test.localInit(argsLoc);
 		
 		test.setConnectionProvider(new ConnectionProvider(test.getConfig()));
 
-		test.executeLoops();
+		test.executeLocal();
 		
 		System.exit(0);
 
+		
+		
 	}
 	
-	private void executeLoops() {
+	
+	void localInit(String[] argsLoc) {
+		
+		this.setPrintConnectionTime((this.getConfig().get("printConnectionTime")!=null)?Boolean.parseBoolean((String)getConfig().get("printConnectionTime")):true);
+		
+	}
+	
+	private void executeLocal() {
 		long startOpenConenction = 0;
 		long endOpenConenction = 0;
 		long startCloseConenction = 0;		
@@ -82,7 +85,7 @@ public class MySQLConnectionTest {
 				endOpenConenction = System.nanoTime() ;
 				
 				hostName = this.executeSQL(conn);
-				
+	
 				startCloseConenction = System.nanoTime();
 				this.getConnectionProvider().returnConnection(conn);
 				endCloseConenction = System.nanoTime();
@@ -185,9 +188,9 @@ public class MySQLConnectionTest {
 		if(!isReportCSV()) {
 			
 			averageReport.append("\n Summary \n");
-			averageReport.append("Average Time Open  = " + Utility.formatNumberToPrint(this.formattingLenghtForNano, df2.format(avgOpen)));
+			averageReport.append("Average Time Open ns = " + Utility.formatNumberToPrint(this.formattingLenghtForNano, df2.format(avgOpen)));
 			averageReport.append(" microS = " + Utility.formatNumberToPrint(8, df2.format((avgOpen / 1000))) + " \n");
-			averageReport.append("Average Time Close = " + Utility.formatNumberToPrint(this.formattingLenghtForNano, df2.format(avgClose)));
+			averageReport.append("Average Time Close ns = " + Utility.formatNumberToPrint(this.formattingLenghtForNano, df2.format(avgClose)));
 			averageReport.append(" microS = " + Utility.formatNumberToPrint(8, df2.format((avgClose / 1000))) + " \n");
 			
 			averageReport.append("Max Open (time in nano seconds)  = " + Utility.formatNumberToPrint(this.formattingLenghtForNano, df2.format(maxOpen)) + "\n");
@@ -241,40 +244,7 @@ public class MySQLConnectionTest {
 		return hostname;
 	}
 
-	private void init(String[] args) {
-		
-		try {
-			/*
-			 * Configuration first
-			 */
-			this.generateParameters(defaultParameters);
-			if (args.length >= 1) {
-				this.getConfig().putAll(this.getArguments(args));
-//				this.setConfig(this.getArguments(args));
-			}
-		} catch (Throwable th) {
-			th.printStackTrace();
-		}
-		
-		
-		
-//		setConnectionProvider(new ConnectionProvider(getConfig()));
-		
-		
-		this.setLoops((this.getConfig().get("loops")!=null)
-				?Utility.isNumeric(this.getConfig().get("loops"))?(int)getConfig().get("loop")
-						:Integer.parseInt((String)getConfig().get("loops")):50); 
-		
-		this.setSleep((this.getConfig().get("sleep")!=null)
-				?Utility.isNumeric(this.getConfig().get("sleep"))?(int)getConfig().get("sleep")
-						:Integer.parseInt((String)getConfig().get("sleep")):0); 
-		
-		
-		this.setVerbose((this.getConfig().get("verbose")!=null)?Boolean.parseBoolean((String)getConfig().get("verbose")):false);
-		this.setSummary((this.getConfig().get("summary")!=null)?Boolean.parseBoolean((String)getConfig().get("summary")):false);
-		this.setPrintConnectionTime((this.getConfig().get("printConnectionTime")!=null)?Boolean.parseBoolean((String)getConfig().get("printConnectionTime")):true);
-		this.setReportCSV((this.getConfig().get("reportCSV")!=null)?Boolean.parseBoolean((String)getConfig().get("reportCSV")):false);
-	}
+
 	public MySQLConnectionTest() {
 		this.setConfig(new HashMap());
 
@@ -282,100 +252,19 @@ public class MySQLConnectionTest {
 
 	
 
-	private static void showHelp() {
+	 StringBuffer showHelp() {
 
-		StringBuffer sb = new StringBuffer();
-		sb.append("******************************************\n");
-		sb.append("DB Parameters to use\n");
-		sb.append("Parameters are COMMA separated and the whole set must be pass as string\n");
-		sb.append("IE java -Xms2G -Xmx3G -classpath \"./*:./lib/*\" net.tc.testsuite.MySQLConnectionTest 'loops=10,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306' \n");
-		sb.append("url [url=jdbc:mysql://127.0.0.1:3306]\n");
-		sb.append("user [user=test_user]\n");
-		sb.append("password [password=test_pw]\n");
-		sb.append("parameters [parameters=&useSSL=false&autoReconnect=true]\n");
-		sb.append("schema [schema=test]\n");
-		sb.append("\n*****************************************\nApplication Parameters \n");
-		sb.append("loops [loops=50\n");
-		sb.append("sleep [sleep=0]\n");
-		sb.append("verbose [verbose=false]\n");
-		sb.append("summary [summary=false]\n");
-		sb.append("printConnectionTime [printConnectionTime=true]\n");
-		sb.append("reportCSV [reportCSV=false]\n");
+		StringBuffer sb = super.showHelp();
+		sb.append("\n****************************************\n Optional For the test");
+		sb.append(" printConnectionTime [printConnectionTime=true]\n");
+		
 
-		sb.append("\n\n****************************************\n Optional ");
-		sb.append("selectForceAutocommitOff [selectForceAutocommitOff=true]\n\n");
-		System.out.print(sb.toString());
-		System.exit(0);
+//		System.out.print(sb.toString());
+//		System.exit(0);
+		return sb;
 
 	}
 
-	private Map<String, Object> getArguments(String[] args) {
-		if (args.length ==0 ) {
-			MySQLConnectionTest.showHelp();
-		}
-
-		Map<String, Object> config = new HashMap();
-		for (String entry : args) {
-			
-			if(entry.indexOf("parameters") > -1) {
-				this.generateParameters(entry.replace("parameters=", ""));
-			}
-			else {
-				String keyValue[] = entry.split("=");
-				config.put(keyValue[0], keyValue[1]);
-			}
-		}
-		config.put("parameters", this.getParameters());
-		return config;
-	}
-
-	private ConnectionProvider getConnectionProvider() {
-		return connectionProvider;
-	}
-
-	private void setConnectionProvider(ConnectionProvider connectionProvider) {
-		this.connectionProvider = connectionProvider;
-	}
-
-	private Map<String, Object> getConfig() {
-		return config;
-	}
-
-	private void setConfig(Map config) {
-		this.config = config;
-	}
-
-	private int getLoops() {
-		return loops;
-	}
-
-	private void setLoops(int loops) {
-		this.loops = loops;
-	}
-
-	private int getSleep() {
-		return sleep;
-	}
-
-	private void setSleep(int sleep) {
-		this.sleep = sleep;
-	}
-
-	private boolean isVerbose() {
-		return verbose;
-	}
-
-	private void setVerbose(boolean verbose) {
-		this.verbose = verbose;
-	}
-
-	private boolean isSummary() {
-		return summary;
-	}
-
-	private void setSummary(boolean summary) {
-		this.summary = summary;
-	}
 
 	private boolean isPrintConnectionTime() {
 		return printConnectionTime;
@@ -385,54 +274,6 @@ public class MySQLConnectionTest {
 		this.printConnectionTime = printConnectionTime;
 	}
 
-	private Map getParameters() {
-		return parameters;
-	}
-    
-	private void  generateParameters(String params) {
-		
-		String[] paraTem = params.split("&");
-		for (String entry : paraTem) { 
-			if(entry.indexOf("=") > 0) {
-				String[] keyValue = entry.split("=");
-				getParameters().put(keyValue[0], keyValue[1]);
-			}
-		
-		}
-		
 
-	}
-	private void  generateConfig(String configString) {
-		
-		String[] temp = configString.split("&");
-		for (String entry : temp) { 
-			if(entry.indexOf("=") > 0) {
-				String[] keyValue = entry.split("=");
-				getConfig().put(keyValue[0], keyValue[1]);
-			}
-		
-		}
-		
-
-	}
-	private void setParameters(Map parameters) {
-		this.parameters = parameters;
-	}
-
-	private int getFormattingLenghtForNano() {
-		return formattingLenghtForNano;
-	}
-
-	private void setFormattingLenghtForNano(int formattingLenghtForNano) {
-		this.formattingLenghtForNano = formattingLenghtForNano;
-	}
-
-	private boolean isReportCSV() {
-		return reportCSV;
-	}
-
-	private void setReportCSV(boolean reportCSV) {
-		this.reportCSV = reportCSV;
-	}
 
 }
