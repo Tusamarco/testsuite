@@ -71,6 +71,12 @@ public class MySQLConnectionTest extends TestBase{
 			}
 			
 			for(int iLoop = 0; iLoop <= this.getLoops(); iLoop++) {
+				startOpenConenction = System.nanoTime();
+				conn = this.getConnectionProvider().getTesteMySQLConnection();
+				endOpenConenction = System.nanoTime() ;
+				
+				hostName = this.executeSQL(conn);
+				
 				if(getSleep() > 0 ) {
 					try {
 						Thread.sleep(getSleep());
@@ -79,13 +85,7 @@ public class MySQLConnectionTest extends TestBase{
 						e.printStackTrace();
 					}
 				}
-				
-				startOpenConenction = System.nanoTime();
-				conn = this.getConnectionProvider().getTesteMySQLConnection();
-				endOpenConenction = System.nanoTime() ;
-				
-				hostName = this.executeSQL(conn);
-	
+
 				startCloseConenction = System.nanoTime();
 				this.getConnectionProvider().returnConnection(conn);
 				endCloseConenction = System.nanoTime();
