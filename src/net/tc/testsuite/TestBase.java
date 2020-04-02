@@ -81,7 +81,7 @@ public class TestBase {
 	
 	
 	Map<String, Object> getArguments(String[] args) {
-		if (args == null || args.length == 0) {
+		if (args == null || args.length < 1) {
 			this.showHelp();
 		}
 
