@@ -5,6 +5,10 @@ HOW to USE it
 
 `java -Xms2G -Xmx3G -classpath "./*:./lib/*" net.tc.testsuite.MySQLConnectionTest 'loops=10,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306, verbose=true, summary=true'`
 
+or use the run.sh script and add parameters like
+
+`./run.sh "loops=200,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306,sleep=1000,summary=true"`
+
 ```******************************************
 DB Parameters to use
 Parameters are COMMA separated and the whole set must be pass as string

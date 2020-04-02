@@ -164,7 +164,7 @@ public class TestBase {
 		sb.append("schema [schema=test]\n");
 		sb.append("\n*****************************************\nApplication Parameters \n");
 		sb.append("loops [loops=50\n");
-		sb.append("sleep [sleep=0]\n");
+		sb.append("sleep [sleep=0] value in milliseconds \n");
 		sb.append("verbose [verbose=false]\n");
 		sb.append("summary [summary=false]\n");
 
