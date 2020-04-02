@@ -24,7 +24,8 @@ public class MySQLConnectionTest extends TestBase{
 		
 		if (args.length <= 0 
 				|| args.length > 1
-				|| (args.length >= 1 && args[0].indexOf("help") > -1)) {
+				|| (args.length >= 1 && args[0].indexOf("help") > -1)
+				|| args[0].equals("")) {
 			
 			System.out.println(test.showHelp());
 			System.exit(0);
