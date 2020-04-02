@@ -22,7 +22,7 @@ public class MySQLConnectionTest extends TestBase{
 	public static void main(String[] args) {
 		MySQLConnectionTest test = new MySQLConnectionTest();
 		
-		if (args.length < 0 
+		if (args.length <= 0 
 				|| args.length > 1
 				|| (args.length >= 1 && args[0].indexOf("help") > -1)) {
 			
