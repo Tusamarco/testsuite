@@ -19,7 +19,7 @@ or use the run.sh script and add class name and  parameters like
 
 `./run.sh MySQLConnectionTest "loops=200,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306,sleep=1000,summary=true"`
 
-##Parameters
+## Parameters
 Parameters are divided by, connection parameters and application parameters.
  
 Some parameters are common to all tests like:
@@ -51,15 +51,15 @@ Some other can be specific to that test
  Optional For the test printConnectionTime [printConnectionTime=true]
 ```
 
-###Some running example
+### Some running example
 MySQLConnectionTest : `./run.sh MySQLConnectionTest "loops=100, url=jdbc:mysql://192.168.4.22:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000 help"`
 StaleReadTest       : `./run.sh StaleReadTest "loops=10000, url=jdbc:mysql://192.168.4.22:3306, urlRead=jdbc:mysql://192.168.4.23:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000"	` 
 
-##Output
+## Output
 All tests have a VERBOSE and SUMMARY mode. You can enable/disable them as you like.
 All tests have a CSV option, when used you will get output in easy to import format for analysis
 
-#Bugs 
+# Bugs 
 * Please report any bug a
 * Please suggest any test you would like to add
 
