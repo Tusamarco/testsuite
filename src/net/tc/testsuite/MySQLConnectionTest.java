@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import net.tc.data.db.ConnectionProvider;
+import net.tc.utils.MathU;
 import net.tc.utils.Utility;
 
 public class MySQLConnectionTest extends TestBase{
@@ -161,28 +162,28 @@ public class MySQLConnectionTest extends TestBase{
 		/*
 		 * calculate standard deviation
 		 */
-		double standardDevOpen = 0.0;
-		double standardDevClose = 0.0;
-		ArrayList stdOpen = new ArrayList();
-		ArrayList stdClose = new ArrayList();
+//		double standardDevOpen = 0.0;
+//		double standardDevClose = 0.0;
+//		ArrayList stdOpen = new ArrayList();
+//		ArrayList stdClose = new ArrayList();
+//		
+//		for(int i = 1 ; i < this.startConnTimes.size(); i++){
+//			
+//			stdOpen.add(Math.pow((long)this.startConnTimes.get(i) - avgOpen, 2));
+//			stdClose.add(Math.pow((long)this.endConnTimes.get(i) - avgClose, 2));
+//		}
+//		
+//		for(int i = 0 ; i < stdOpen.size(); i++){
+//			standardDevOpen  += (double)stdOpen.get(i);
+//			standardDevClose += (double)stdClose.get(i);
+//			
+//		}
+//		
+//		standardDevOpen = standardDevOpen/(stdOpen.size());
+//		standardDevClose = standardDevClose/(stdClose.size());
 		
-		for(int i = 1 ; i < this.startConnTimes.size(); i++){
-			
-			stdOpen.add(Math.pow((long)this.startConnTimes.get(i) - avgOpen, 2));
-			stdClose.add(Math.pow((long)this.endConnTimes.get(i) - avgClose, 2));
-		}
-		
-		for(int i = 0 ; i < stdOpen.size(); i++){
-			standardDevOpen  += (double)stdOpen.get(i);
-			standardDevClose += (double)stdClose.get(i);
-			
-		}
-		
-		standardDevOpen = standardDevOpen/(stdOpen.size());
-		standardDevClose = standardDevClose/(stdClose.size());
-		
-		standardDevOpen = Math.sqrt(standardDevOpen);
-		standardDevClose = Math.sqrt(standardDevClose);
+		double standardDevOpen = MathU.calculateStandardDeviation(this.startConnTimes, avgOpen);//  Math.sqrt(standardDevOpen);
+		double standardDevClose = MathU.calculateStandardDeviation(this.endConnTimes,avgClose); //  Math.sqrt(standardDevClose);
 		
 		StringBuffer averageReport = new StringBuffer();
 		

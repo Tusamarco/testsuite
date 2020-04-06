@@ -25,7 +25,7 @@ public class TestBase {
 	DecimalFormat df2 = new DecimalFormat("#,###,###,##0.00");
 	DecimalFormat dfCSV = new DecimalFormat("#.00");
 	boolean reportCSV = false;
-
+	String schemaName = null;
 	
 	
 	
@@ -70,7 +70,7 @@ public class TestBase {
 		this.setSummary((this.getConfig().get("summary")!=null)?Boolean.parseBoolean((String)getConfig().get("summary")):false);
 		
 		this.setReportCSV((this.getConfig().get("reportCSV")!=null)?Boolean.parseBoolean((String)getConfig().get("reportCSV")):false);
-		
+		this.setSchemaName((this.getConfig().get("reportCSV")!=null)?(String)getConfig().get("schema"):"test");
 	}
 	
 	void localInit(String[] args) {
@@ -108,6 +108,8 @@ public class TestBase {
 	}
 
 	Map<String, Object> getConfig() {
+		if(config == null)
+			this.setConfig(new HashMap());
 		return config;
 	}
 
@@ -317,6 +319,16 @@ public class TestBase {
 
 	void setReportCSV(boolean reportCSV) {
 		this.reportCSV = reportCSV;
+	}
+
+
+	String getSchemaName() {
+		return schemaName;
+	}
+
+
+	void setSchemaName(String schemaName) {
+		this.schemaName = schemaName;
 	}
 
 }

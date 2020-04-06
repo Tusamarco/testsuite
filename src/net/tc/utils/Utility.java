@@ -626,6 +626,17 @@ import javax.imageio.ImageIO;
    	return true;  
    }  
    
+   public static String formatStringToPrint(int length, String string ) {
+		StringBuilder sb = new StringBuilder();
+		
+		while (sb.length() < (length - string.length())) {
+			sb.append(" ");
+		}
+		sb.append(string);
+	   
+		
+	   return sb.toString();   
+   }
    public static String formatNumberToPrint(int length, long number ) {
 		StringBuilder sb = new StringBuilder();
 		
@@ -662,7 +673,7 @@ import javax.imageio.ImageIO;
 	   return sb.toString();   
    }
    
-   
+
    
 }
 
