@@ -53,6 +53,7 @@ Some other can be specific to that test
 
 ### Some running example
 MySQLConnectionTest : `./run.sh MySQLConnectionTest "loops=100, url=jdbc:mysql://192.168.4.22:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000 help"`
+
 StaleReadTest       : `./run.sh StaleReadTest "loops=10000, url=jdbc:mysql://192.168.4.22:3306, urlRead=jdbc:mysql://192.168.4.23:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000"	` 
 
 ## Output
