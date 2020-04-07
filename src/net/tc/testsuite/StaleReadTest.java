@@ -44,6 +44,9 @@ public class StaleReadTest extends TestBase {
 		test.setConnectionProvider(new ConnectionProvider(test.getConfig()));
 		if (test.getSleep()<=0)test.setSleep(2000);
 		
+		if(test.getConfig().containsKey("rowsNumber")){
+			test.setRowsNumber(Integer.parseInt((String) test.getConfig().get("rowsNumber")));
+		}
 		
 		if(test.getConfig().containsKey("urlRead")){
 			Map<String,Object> newConfig = test.getConfig();
@@ -391,7 +394,9 @@ public class StaleReadTest extends TestBase {
 				+ " if present the tool will compare the WRITES done against url\n"
 				+ " with the reads from urlRead "
 				+ " I not present the tool assume the presence of ProxySQL and will use only one URL"
-				+ "\n");
+				+ "\n"
+				+ "rowsNumber [rowsNumber=10000]\n"
+				+ "");
 		sb.append("=============");
 		sb.append("sleep in this context refer to the time the test will wait after table load\n"
 				+ "Default sleep = 2000 ms (2 seconds)");
