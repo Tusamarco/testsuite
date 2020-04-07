@@ -173,6 +173,7 @@ public class StaleReadTest extends TestBase {
 			Statement rstmt = readConn.createStatement();
 			System.out.println("Going to sleep for two seconds before executing");
 			Thread.sleep(this.getSleep());
+			System.out.println("Executing:");
 			
 			ArrayList<Integer> ids = getIds(wstmt);
 			
@@ -236,11 +237,13 @@ public class StaleReadTest extends TestBase {
 				
 				
 				if(this.isVerbose())
-						print_verbose(sb, iCounter, id, writeTimei, readTimei, lagTimei, lag);				
+						print_verbose(sb, iCounter, id, writeTimei, readTimei, lagTimei, lag);
+				else
+					System.out.print(".");
 				
 				sb.delete(0, sb.length());
 			}
-			System.out.println("Done");
+			System.out.println("\n Done \n ");
 			this.getResults().put("writeTime", writeTime);
 			this.getResults().put("readTime", readTime);
 			this.getResults().put("lagTime", lagTime);
