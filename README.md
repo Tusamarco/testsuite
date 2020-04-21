@@ -1,9 +1,10 @@
 # What is it
 
 This test suite is a collection of classes that can be call to perform some of the most basic and often used functionalities tests.
+
 Currently implemented :
-  * Connectivity test 
-  * stale read test
+  * Connectivity test (MySQLConnectionTest class) 
+  * stale read test   (StaleReadTest class)
 
 ## HOW to USE it
 
@@ -18,6 +19,10 @@ Then just invoke the class name with  --help to see the possible options:
 or use the run.sh script and add class name and  parameters like
 
 `./run.sh MySQLConnectionTest "loops=200,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306,sleep=1000,summary=true"`
+
+OR with more parameters
+
+`sh ./run.sh MySQLConnectionTest "loops=200,0parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.233:3306,sleep=100,summary=true,user=app_test,password=test,schema=windmills,verbose=true "`
 
 ## Parameters
 Parameters are divided by, connection parameters and application parameters.
