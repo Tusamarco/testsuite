@@ -26,7 +26,8 @@ public class TestBase {
 	DecimalFormat dfCSV = new DecimalFormat("#.00");
 	boolean reportCSV = false;
 	String schemaName = null;
-	
+	double startTime = 0;
+	double endTime = 0 ;
 	
 	
 	
@@ -329,6 +330,33 @@ public class TestBase {
 
 	void setSchemaName(String schemaName) {
 		this.schemaName = schemaName;
+	}
+	
+	double getExecutionTime() {
+		if(startTime > 0 && endTime > 0) {
+			return (endTime - startTime);
+		}
+		return 0;
+	}
+
+
+	double getStartTime() {
+		return startTime;
+	}
+
+
+	void setStartTime(double startTime) {
+		this.startTime = startTime;
+	}
+
+
+	double getEndTime() {
+		return endTime;
+	}
+
+
+	void setEndTime(double endTime) {
+		this.endTime = endTime;
 	}
 
 }

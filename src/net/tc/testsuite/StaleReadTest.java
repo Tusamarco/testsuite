@@ -137,13 +137,14 @@ public class StaleReadTest extends TestBase {
 			DecimalFormat decimalFormat = new DecimalFormat(pattern);
 
 			averageReport.append("loops,slate reads found,stale read % on total,"
-					+ " avg write time,avg read time,avg lag time,"
+					+ " total time,avg write time,avg read time,avg lag time,"
 					+ " min write,max write,min read,max read,max lag, min lag, "
 					+ "\n");
 
 			averageReport.append( this.getRowsNumber());
 			averageReport.append("," + istancesWithLag );
 			averageReport.append("," + pct );
+			averageReport.append("," + decimalFormat.format(this.getExecutionTime()));
 			averageReport.append("," + decimalFormat.format(averageWrite));
 			averageReport.append("," + decimalFormat.format(averageRead));
 			averageReport.append("," + decimalFormat.format(averageLag));
@@ -167,6 +168,7 @@ public class StaleReadTest extends TestBase {
 			averageReport.append("\nStale reads found = " + istancesWithLag );
 			averageReport.append("\nStale reads found% = " + pct );
 			averageReport.append("\n============ Time in nano seconds");
+			averageReport.append("\nTotal execution time = " + decimalFormat.format(this.getExecutionTime()));
 			averageReport.append("\nAverage write time = " + decimalFormat.format(averageWrite));
 			averageReport.append("\nAverage read time = " + decimalFormat.format(averageRead));
 			averageReport.append("\nAverage lag time = " + decimalFormat.format(averageLag));
@@ -194,6 +196,8 @@ public class StaleReadTest extends TestBase {
 			System.out.println("Going to sleep for two seconds before executing");
 			Thread.sleep(this.getSleep());
 			System.out.println("Executing:");
+						
+			this.setStartTime(System.nanoTime());
 			
 			ArrayList<Integer> ids = getIds(wstmt);
 			
@@ -202,6 +206,7 @@ public class StaleReadTest extends TestBase {
 			ArrayList<Long> lagTime = new ArrayList<Long>();
 			
 			String dateRun = Utility.getTimeStamp(System.currentTimeMillis()) ;  
+			
 			int iCounter = 0;
 			
 			if(!this.isReportCSV()) {
@@ -272,6 +277,8 @@ public class StaleReadTest extends TestBase {
 			this.getResults().put("writeTime", writeTime);
 			this.getResults().put("readTime", readTime);
 			this.getResults().put("lagTime", lagTime);
+			
+			this.setEndTime(System.nanoTime());
 			
 			return true;
 		}catch(Throwable th){th.printStackTrace();}
