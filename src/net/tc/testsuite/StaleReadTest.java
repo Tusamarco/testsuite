@@ -223,7 +223,13 @@ public class StaleReadTest extends TestBase {
 				long lagTimei = 0;
 				boolean lag = false;
 						
-				String sqlW = "UPDATE " + this.getSchemaName() + ".staleread SET t = '"+ dateRun +"' WHERE id = " + id.toString();
+				String sqlW ="";
+				if(Utility.isEvenNumber(iCounter)) {
+					sqlW = "UPDATE " + this.getSchemaName() + ".staleread SET t = '"+ dateRun +"' WHERE id = " + id.toString();
+				}
+				else {
+					sqlW = "REPLACE INTO " + this.getSchemaName() +".staleread VALUES ("+ id.toString() +", uuid(), time('" + dateRun + "') , (FLOOR( 1 + RAND( ) *60 )))";
+				}
 				String sqlR = "Select id  From " + this.getSchemaName() + ".staleread WHERE id = " + id.toString() + " and t = '"+ dateRun +"'"; 
 				
 				long startTimeWrite = System.nanoTime();

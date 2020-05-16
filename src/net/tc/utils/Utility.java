@@ -612,6 +612,15 @@ import javax.imageio.ImageIO;
 //	 return isPositive;
 	 
    }
+   
+   public static boolean isEvenNumber(Integer n) {
+	   if ( n % 2 == 0 ) {
+	        return true;
+	   }
+	     else {
+	    	 return false;
+	  }
+   }
 
    public static boolean isDouble(String str)  
    {  
