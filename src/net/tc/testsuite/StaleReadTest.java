@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -106,6 +107,9 @@ public class StaleReadTest extends TestBase {
 	}
 
 	private void printReport() {
+		
+		
+
 		StringBuffer averageReport = new StringBuffer();
 		
 		double averageWrite = MathU.getAverage(this.getResults().get("writeTime"));
@@ -120,9 +124,18 @@ public class StaleReadTest extends TestBase {
 		long[] maxminLag = MathU.getMaxMin(this.getResults().get("lagTime"));
 		
 		int istancesWithLag = this.getStaleReads();  
-		float pct  =  ((istancesWithLag *100)/this.getRowsNumber());
+		float pct  = (float) 0.0;
+		if(this.getLoops() > this.getRowsNumber()) {		
+			  pct = ((istancesWithLag *100)/this.getRowsNumber());
+		}
+		else {
+			pct = ((istancesWithLag *100)/this.getLoops());
+		}
 		
 		if(isReportCSV()) {
+			String pattern = "######.###";
+			DecimalFormat decimalFormat = new DecimalFormat(pattern);
+
 			averageReport.append("loops,slate reads found,stale read % on total,"
 					+ " avg write time,avg read time,avg lag time,"
 					+ " min write,max write,min read,max read,max lag, min lag, "
@@ -131,36 +144,40 @@ public class StaleReadTest extends TestBase {
 			averageReport.append( this.getRowsNumber());
 			averageReport.append("," + istancesWithLag );
 			averageReport.append("," + pct );
-			averageReport.append("," + averageWrite);
-			averageReport.append("," + averageRead);
-			averageReport.append("," + averageLag);
+			averageReport.append("," + decimalFormat.format(averageWrite));
+			averageReport.append("," + decimalFormat.format(averageRead));
+			averageReport.append("," + decimalFormat.format(averageLag));
 			
-			averageReport.append("," + maxminWrite[0] + "," + maxminWrite[1] );
-			averageReport.append("," + maxminRead[0] + "," + maxminRead[1] );
-			averageReport.append("," + maxminLag[0] + "," + maxminLag[1] );
+			averageReport.append("," + decimalFormat.format(maxminWrite[0]) + "," + decimalFormat.format(maxminWrite[1] ));
+			averageReport.append("," + decimalFormat.format(maxminRead[0]) + "," + decimalFormat.format(maxminRead[1] ));
+			averageReport.append("," + decimalFormat.format(maxminLag[0]) + "," + decimalFormat.format(maxminLag[1] ));
 			
-			averageReport.append("," + stdWrite );
-			averageReport.append("," + stdRead );
-			averageReport.append("," + stdRead );
+			averageReport.append("," + decimalFormat.format(stdWrite ));
+			averageReport.append("," + decimalFormat.format(stdRead ));
+			averageReport.append("," + decimalFormat.format(stdRead ));
 			
 			
 		}
 		else {
+			String pattern = "###,###.###";
+			DecimalFormat decimalFormat = new DecimalFormat(pattern);
 			averageReport.append("\n============ Summary ===========");
-			averageReport.append("\nTotal loops  = " + this.getRowsNumber());
+			averageReport.append("\nTotal loops  = " + this.getLoops());
+			averageReport.append("\nTotal rows  = " + this.getRowsNumber());
 			averageReport.append("\nStale reads found = " + istancesWithLag );
 			averageReport.append("\nStale reads found% = " + pct );
-			averageReport.append("\nAverage write time = " + averageWrite);
-			averageReport.append("\nAverage read time = " + averageRead);
-			averageReport.append("\nAverage lag time = " + averageLag);
+			averageReport.append("\n============ Time in nano seconds");
+			averageReport.append("\nAverage write time = " + decimalFormat.format(averageWrite));
+			averageReport.append("\nAverage read time = " + decimalFormat.format(averageRead));
+			averageReport.append("\nAverage lag time = " + decimalFormat.format(averageLag));
 			
-			averageReport.append("\nMin/Max Write time = " + maxminWrite[0] + "/" + maxminWrite[1] );
-			averageReport.append("\nMin/Max Read time = " + maxminRead[0] + "/" + maxminRead[1] );
-			averageReport.append("\nMin/Max lag time = " + maxminLag[0] + "/" + maxminLag[1] );
+			averageReport.append("\nMax/Min Write time = " + decimalFormat.format(maxminWrite[0]) + "/" +decimalFormat.format( maxminWrite[1] ));
+			averageReport.append("\nMax/Min Read time = " + decimalFormat.format(maxminRead[0]) + "/" + decimalFormat.format(maxminRead[1] ));
+			averageReport.append("\nMax/Min lag time = " + decimalFormat.format(maxminLag[0]) + "/" + decimalFormat.format(maxminLag[1] ));
 			
-			averageReport.append("\nstd Dev Write time = " + stdWrite );
-			averageReport.append("\nstd Dev Read time = " + stdRead );
-			averageReport.append("\nstd Dev lag time = " + stdRead );
+			averageReport.append("\nstd Dev Write time = " + decimalFormat.format(stdWrite ));
+			averageReport.append("\nstd Dev Read time = " + decimalFormat.format(stdRead ));
+			averageReport.append("\nstd Dev lag time = " + decimalFormat.format(stdRead ));
 			
 			
 		}
@@ -245,6 +262,11 @@ public class StaleReadTest extends TestBase {
 					System.out.print(".");
 				
 				sb.delete(0, sb.length());
+				//If loop is < than rows force the exit based on loop #
+				if(this.getLoops() < this.getRowsNumber()
+					&& iCounter >= this.getLoops()) {
+					break;
+				}
 			}
 			System.out.println("\n Done \n ");
 			this.getResults().put("writeTime", writeTime);
