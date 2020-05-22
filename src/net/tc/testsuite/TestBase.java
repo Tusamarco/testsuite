@@ -162,7 +162,7 @@ public class TestBase {
 				"IE java -Xms2G -Xmx3G -classpath \"./*:./lib/*\" net.tc.testsuite.MySQLConnectionTest \"loops=10,parameters=&characterEncoding=UTF-8, url=jdbc:mysql://192.168.4.22:3306\" \n");
 		sb.append("url [url=jdbc:mysql://127.0.0.1:3306]\n");
 		sb.append("user [user=test_user]\n");
-		sb.append("password [password=test_pw]\n");
+		sb.append("password [password=test_password]\n");
 		sb.append("parameters [parameters=&useSSL=false&autoReconnect=true]\n");
 		sb.append("schema [schema=test]\n");
 		sb.append("\n*****************************************\nApplication Parameters \n");

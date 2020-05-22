@@ -48,7 +48,8 @@ public class StaleReadTest extends TestBase {
 		if(test.getConfig().containsKey("rowsNumber")){
 			test.setRowsNumber(Integer.parseInt((String) test.getConfig().get("rowsNumber")));
 		}
-		
+
+	
 		if(test.getConfig().containsKey("urlRead")){
 			Map<String,Object> newConfig = test.getConfig();
 			newConfig.put("url", test.getConfig().get("urlRead"));
@@ -357,11 +358,18 @@ public class StaleReadTest extends TestBase {
 			writeConn.setAutoCommit(false);
 			stmt = writeConn.createStatement();
 			
-			for(int i = 1; i <= this.getRowsNumber() ; i++ ) {
-				stmt.addBatch(insert);
+			int totRows=0;
+			while(totRows <= getRowsNumber()) {
+				for( int subBatch=1 ; subBatch <= 100;subBatch++) {
+					stmt.addBatch(insert);
+					totRows++ ; 
+				}
+				stmt.executeBatch();
+				writeConn.commit();
+				stmt.clearBatch();
+				System.out.println(" wrote " + totRows + " of " + this.getRowsNumber());
+				
 			}
-			stmt.executeBatch();
-			writeConn.commit();
 			
 		} catch (SQLException e) {
 			e.printStackTrace();
