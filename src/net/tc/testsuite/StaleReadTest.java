@@ -236,6 +236,7 @@ public class StaleReadTest extends TestBase {
 				long startTimeWrite = System.nanoTime();
 				
 				wstmt.execute(sqlW);
+				wstmt.execute("COMMIT");
 				writeConn.commit();
 				
 				long startTimeRead = System.nanoTime();
