@@ -5,6 +5,7 @@ This test suite is a collection of classes that can be call to perform some of t
 Currently implemented :
   * Connectivity test (MySQLConnectionTest class) 
   * stale read test   (StaleReadTest class)
+  * Queue Processor (QueueProcessor.class) 
 
 ## HOW to USE it
 
