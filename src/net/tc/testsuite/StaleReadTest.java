@@ -21,6 +21,7 @@ public class StaleReadTest extends TestBase {
 	long toleranceNanosec = 5000 ; //Tolerance by default is 5 microsecond if more than that we have an issue
 	Map<String,ArrayList<Long>> results = new HashMap<String, ArrayList<Long>>();
 	int staleReads = 0; 
+	boolean printStatusDone = false;
 	
 	public static void main(String[] args) {
 		StaleReadTest test = new StaleReadTest();
@@ -48,7 +49,9 @@ public class StaleReadTest extends TestBase {
 		if(test.getConfig().containsKey("rowsNumber")){
 			test.setRowsNumber(Integer.parseInt((String) test.getConfig().get("rowsNumber")));
 		}
-
+		if(test.getConfig().containsKey("printStatusDone")){
+			test.setPrintStatusDone(Boolean.parseBoolean((String)test.getConfig().get("printStatusDone")));
+		}
 	
 		if(test.getConfig().containsKey("urlRead")){
 			Map<String,Object> newConfig = test.getConfig();
@@ -72,7 +75,13 @@ public class StaleReadTest extends TestBase {
 				System.exit(1);
 			}
 		}		
-		
+		if(test.reportCSV && test.isPrintStatusDone()) {
+			test.setPrintStatusDone(false);
+			System.out.println("\n[WARNING] you cannot print the % increase when output is in CSV."
+					+ "\n if nothing is printed out and you need to check the status of the test"
+					+ "\n try to check with SHOW PROCESSLIST"
+					+ "Print % increase is now disabled\n");
+		}
 		
 		test.executeLocal();
 		
@@ -239,14 +248,16 @@ public class StaleReadTest extends TestBase {
 			}
 			
 			
-			
+			int lenghtIds = ids.size();
+			int iDone = 0 ;
 			for(Object id:ids.toArray()) {
 				iCounter++;
 				long writeTimei = 0;
 				long readTimei = 0;
 				long lagTimei = 0;
 				boolean lag = false;
-						
+				iDone++;
+				
 				String sqlW ="";
 				if(Utility.isEvenNumber(iCounter)) {
 					sqlW = "UPDATE " + this.getSchemaName() + ".staleread SET t = '"+ dateRun +"' WHERE id = " + id.toString();
@@ -297,6 +308,13 @@ public class StaleReadTest extends TestBase {
 				else
 					System.out.print(".");
 				
+				if(this.isVerbose()
+						&& this.isPrintStatusDone()
+						&& iDone >= 10) {
+					float pctDone =((iCounter *100/lenghtIds));
+					iDone = 0;
+					System.out.println("Currently executed "+ pctDone + " %");
+				}
 				sb.delete(0, sb.length());
 				//If loop is < than rows force the exit based on loop #
 				if(this.getLoops() < this.getRowsNumber()
@@ -475,7 +493,7 @@ public class StaleReadTest extends TestBase {
 		sb.append("sleep in this context refer to the time the test will wait after table load\n"
 				+ "Default sleep = 2000 ms (2 seconds)");
 		sb.append("\n\nawsMMsessionConsistencyLevel [awsMMsessionConsistencyLevel=null| INSTANCE_RAW|REGIONAL_RAW]\n");
-		
+		sb.append("\n\nprintStatusDone [printStatusDone=false] when enable will print % process increase if CSV output is NOT enable \n");
 		
 
 //		System.out.print(sb.toString());
@@ -522,6 +540,14 @@ public class StaleReadTest extends TestBase {
 
 	private void setStaleReads(int staleReads) {
 		this.staleReads = staleReads;
+	}
+
+	boolean isPrintStatusDone() {
+		return printStatusDone;
+	}
+
+	void setPrintStatusDone(boolean printStatusDone) {
+		this.printStatusDone = printStatusDone;
 	}
 	
 	
