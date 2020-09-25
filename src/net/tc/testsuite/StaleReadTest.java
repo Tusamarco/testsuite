@@ -60,6 +60,19 @@ public class StaleReadTest extends TestBase {
 			test.setConnectionProviderRead(new ConnectionProvider(test.getConfig()));
 		}
 			
+		if(test.getConfig().get("awsMMsessionConsistencyLevel")!=null) {
+			if(test.getConfig().get("awsMMsessionConsistencyLevel").equals("REGIONAL_RAW")
+					||test.getConfig().get("awsMMsessionConsistencyLevel").equals("INSTANCE_RAW")) {
+				test.setAwsMMsessionConsistencyLevel((String) (test.getConfig().get("awsMMsessionConsistencyLevel")));
+			}
+			else {
+				System.out.println("\nInvalid parameter for awsMMsessionConsistencyLevel");
+				System.out.print(test.showHelp().toString());
+				
+				System.exit(1);
+			}
+		}		
+		
 		
 		test.executeLocal();
 		
@@ -194,6 +207,14 @@ public class StaleReadTest extends TestBase {
 			StringBuffer sb = new StringBuffer();
 			Statement wstmt = writeConn.createStatement();
 			Statement rstmt = readConn.createStatement();
+
+			if(this.getAwsMMsessionConsistencyLevel()!= null) {
+				wstmt.execute("SET SESSION aurora_mm_session_consistency_level='" + this.getAwsMMsessionConsistencyLevel() + "'");
+				rstmt.execute("SET SESSION aurora_mm_session_consistency_level='" + this.getAwsMMsessionConsistencyLevel() + "'");
+			}
+
+			
+			
 			System.out.println("Going to sleep for two seconds before executing");
 			Thread.sleep(this.getSleep());
 			System.out.println("Executing:");
@@ -216,6 +237,8 @@ public class StaleReadTest extends TestBase {
 			else {
 				sb.append("ID,#loop,writeTime,readTime,lagTime\n");
 			}
+			
+			
 			
 			for(Object id:ids.toArray()) {
 				iCounter++;
@@ -358,9 +381,13 @@ public class StaleReadTest extends TestBase {
 			
 			writeConn.setAutoCommit(false);
 			stmt = writeConn.createStatement();
-			
+
+			if(this.getAwsMMsessionConsistencyLevel()!= null) {
+				stmt.execute("SET SESSION aurora_mm_session_consistency_level='" + this.getAwsMMsessionConsistencyLevel() + "'");
+			}
+
 			int totRows=0;
-			while(totRows <= getRowsNumber()) {
+			while(totRows < getRowsNumber()) {
 				for( int subBatch=1 ; subBatch <= 100;subBatch++) {
 					stmt.addBatch(insert);
 					totRows++ ; 
@@ -414,6 +441,9 @@ public class StaleReadTest extends TestBase {
 		Statement stmt = null;
 		try {
 			stmt = connWrite.createStatement();
+			if(this.getAwsMMsessionConsistencyLevel()!= null) {
+				stmt.execute("SET SESSION aurora_mm_session_consistency_level='" + this.getAwsMMsessionConsistencyLevel() + "'");
+			}
 			stmt.execute(drop);
 			stmt.execute(sb.toString());
 		} catch (SQLException e) {
@@ -444,6 +474,7 @@ public class StaleReadTest extends TestBase {
 		sb.append("=============");
 		sb.append("sleep in this context refer to the time the test will wait after table load\n"
 				+ "Default sleep = 2000 ms (2 seconds)");
+		sb.append("\n\nawsMMsessionConsistencyLevel [awsMMsessionConsistencyLevel=null| INSTANCE_RAW|REGIONAL_RAW]\n");
 		
 		
 

@@ -28,6 +28,7 @@ public class TestBase {
 	String schemaName = null;
 	double startTime = 0;
 	double endTime = 0 ;
+	String awsMMsessionConsistencyLevel = null;
 	
 	
 	
@@ -72,6 +73,9 @@ public class TestBase {
 		
 		this.setReportCSV((this.getConfig().get("reportCSV")!=null)?Boolean.parseBoolean((String)getConfig().get("reportCSV")):false);
 		this.setSchemaName((this.getConfig().get("reportCSV")!=null)?(String)getConfig().get("schema"):"test");
+		
+
+		
 	}
 	
 	void localInit(String[] args) {
@@ -171,6 +175,7 @@ public class TestBase {
 		sb.append("verbose [verbose=false]\n");
 		sb.append("summary [summary=false]\n");
 
+		
 		sb.append("reportCSV [reportCSV=false]\n");
 
 		sb.append("****************************************\n Optional ");
@@ -357,6 +362,16 @@ public class TestBase {
 
 	void setEndTime(double endTime) {
 		this.endTime = endTime;
+	}
+
+
+	String getAwsMMsessionConsistencyLevel() {
+		return awsMMsessionConsistencyLevel;
+	}
+
+
+	void setAwsMMsessionConsistencyLevel(String awsMMsessionConsistencyLevel) {
+		this.awsMMsessionConsistencyLevel = awsMMsessionConsistencyLevel;
 	}
 
 }

@@ -602,6 +602,7 @@ class queueTable {
 				"worked_time bigint default 0, " + 
 				"processer int unsigned default 0, " + 
 				"info varchar(255),  " +
+				"UPDATE_TS TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"  +
 				"INDEX `idx_time_in` (time_in,time_out),  " + 
 				"INDEX `idx_time_out` (time_out,time_in), " + 
 				"INDEX `processer` (processer)" + 
