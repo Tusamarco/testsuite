@@ -159,7 +159,7 @@ public class StaleReadTest extends TestBase {
 			String pattern = "######.###";
 			DecimalFormat decimalFormat = new DecimalFormat(pattern);
 
-			averageReport.append("loops,slate reads found,stale read % on total,"
+			averageReport.append("loops,stale reads found,stale read % on total,"
 					+ " total time,avg write time,avg read time,avg lag time,"
 					+ " min write,max write,min read,max read,max lag, min lag, "
 					+ "\n");
@@ -250,7 +250,7 @@ public class StaleReadTest extends TestBase {
 			}
 			
 			
-			int lenghtIds = ids.size();
+			int lenghtIds = this.getLoops()<ids.size()?this.getLoops():ids.size(); 
 			int iDone = 0 ;
 			for(Object id:ids.toArray()) {
 				iCounter++;
