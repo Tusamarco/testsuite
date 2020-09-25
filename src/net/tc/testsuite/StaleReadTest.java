@@ -216,6 +216,8 @@ public class StaleReadTest extends TestBase {
 			StringBuffer sb = new StringBuffer();
 			Statement wstmt = writeConn.createStatement();
 			Statement rstmt = readConn.createStatement();
+			DecimalFormat df1 = new DecimalFormat(" #,##0.0000");
+			
 
 			if(this.getAwsMMsessionConsistencyLevel()!= null) {
 				wstmt.execute("SET SESSION aurora_mm_session_consistency_level='" + this.getAwsMMsessionConsistencyLevel() + "'");
@@ -310,10 +312,10 @@ public class StaleReadTest extends TestBase {
 				
 				if(this.isVerbose()
 						&& this.isPrintStatusDone()
-						&& iDone >= 10) {
-					float pctDone =((iCounter *100/lenghtIds));
+						&& iDone >= 100) {
+					double pctDone =((iCounter *100/lenghtIds));
 					iDone = 0;
-					System.out.println("Currently executed "+ pctDone + " %");
+					System.out.println("Currently executed "+ df1.format(pctDone) + " %");
 				}
 				sb.delete(0, sb.length());
 				//If loop is < than rows force the exit based on loop #
