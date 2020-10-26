@@ -5,7 +5,8 @@ This test suite is a collection of classes that can be call to perform some of t
 Currently implemented :
   * Connectivity test (MySQLConnectionTest class) 
   * stale read test   (StaleReadTest class)
-  * Queue Processor (QueueProcessor.class) 
+  * Queue Processor (QueueProcessor.class)
+  * Data Load (GenerateData.class) 
 
 ## HOW to USE it
 
@@ -61,6 +62,13 @@ Some other can be specific to that test
 MySQLConnectionTest : `./run.sh MySQLConnectionTest "loops=100, url=jdbc:mysql://192.168.4.22:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000 help"`
 
 StaleReadTest       : `./run.sh StaleReadTest "loops=10000, url=jdbc:mysql://192.168.4.22:3306, urlRead=jdbc:mysql://192.168.4.23:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000"	` 
+
+QueueProcessor      : `./run.sh QueueProcessor "threads=1,skiplocked=true,items=1500, url=jdbc:mysql://192.168.4.55:3306, verbose=true,summary=true,parameters=&characterEncoding=UTF-8,printConnectionTime=true,reportCSV=false,sleep=1000, user=app_test,password=<secret>,schema=queue,reportCSV=false,usechunks=true,itemwriters=5"`	
+
+GenerateData        : `./run.sh GenerateData "url=jdbc:mysql://192.168.4.55:3306, user=dba,password=<secret>,verbose=true,summary=true,parameters=&characterEncoding=UTF-8,reportCSV=true,sleep=1000,printStatusDone=true,schema=bobo,savechunksize=100,numberofaddresses=1000,numberofusers=2000"	` 
+
+##GenerateData class
+This is a special class that can generate random user data. It must be associated to the data coming in test_generate_dataset.sql and once in place requires the data in test_dataset.sql 
 
 ## Output
 All tests have a VERBOSE and SUMMARY mode. You can enable/disable them as you like.

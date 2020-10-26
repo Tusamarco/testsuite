@@ -4,6 +4,13 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.Date;
 import java.util.concurrent.ThreadLocalRandom;
+
+import org.apache.commons.math3.distribution.AbstractRealDistribution;
+import org.apache.commons.math3.distribution.ConstantRealDistribution;
+import org.apache.commons.math3.distribution.NormalDistribution;
+import org.apache.commons.math3.distribution.ParetoDistribution;
+import org.apache.commons.math3.distribution.UniformRealDistribution;
+
 import java.beans.*;
 import java.lang.reflect.*;
 
@@ -24,7 +31,9 @@ import javax.imageio.ImageIO;
  public  class  Utility
 {
     static Random rnd = new Random();
-    public Utility()
+//    UniformRealDistribution randomUniform = new UniformRealDistribution(0,1);
+    
+	public Utility()
     {
     }
 
@@ -246,7 +255,13 @@ import javax.imageio.ImageIO;
         }
         return null;
     }
-
+    public static String getPhoneNumber() {
+    	String first = Utility.getNumberFromRandomMinMax(1, 700).toString();
+    	String second = Utility.getNumberFromRandomMinMax(100, 999).toString();
+    	String third = Utility.getNumberFromRandomMinMax(1001, 9999).toString();
+    	
+    	return first + "-" + second + "-" + third;
+    }
     public boolean deleteFile(String[] filesName, String objectPath)
     {
         for (int i = 0 ; i < filesName.length ; i++ )
@@ -488,6 +503,117 @@ import javax.imageio.ImageIO;
 
   }
  
+  /**
+   * 
+   * @param min
+   * @param max
+   * @param seedIn Seed must be between 0.001 and 200 where 0.001 is uniform distributed and 200 is all on the left
+   * @return
+   */
+  public static Long getNumberFromParetoRandomMinMax(long min,long max, double seedIn)
+  {
+	double seed = 0.0;
+	if(seedIn > 0) seed = seedIn;
+  	if(min >= max) return new Long(max);
+  	
+  	ParetoDistribution random1 = new ParetoDistribution(1,seed);
+  	double number = random1.sample();
+//  	System.out.println(Math.round(number));
+  	if(Math.round(number) >0) {
+  		long numberFilter = Math.round(number);
+  		number = number - numberFilter;
+  	}
+  	
+  	if(!Utility.isPositiveLong(number)){
+  		number *= -1;
+  	}
+//  	System.out.println(number);
+  	Long maxL = Math.round(max * number);
+  	maxL = maxL> max?getNumberFromParetoRandomMinMax(min,max,seed):maxL;
+  	maxL=maxL<min?getNumberFromParetoRandomMinMax(min,max,seed):maxL; 
+  	return maxL;
+
+  }
+  /**
+   * 
+   * @param min
+   * @param max
+   * @param range should be how much in +/- the half of the given MAX the curve should go
+   * @return
+   * double dd3= Utility.getNumberFromGaussianRandomMinMax(min, max,500);
+   */
+  
+  public static Long getNumberFromGaussianRandomMinMax(long min,long max,int range)
+  {
+	double seed = 0.0;
+//	if(seedIn > 0) seed = seedIn;
+  	if(min >= max) return new Long(max);
+  	
+  	NormalDistribution random1 = new NormalDistribution(-1,1);
+  	
+  	double number = rnd.nextGaussian();
+//	System.out.println(number);
+//	if(Math.round(number) >0) {
+//		long numberFilter = Math.round(number);
+//		number = number - numberFilter;
+//	}
+//	
+//	if(!Utility.isPositiveLong(number)){
+//		number *= -1;
+//	}
+//	System.out.println(number);
+	Long maxL = Math.round(number * range +(max/2));
+	maxL = maxL> max?getNumberFromGaussianRandomMinMax(min,max,range):maxL;
+	maxL=maxL<min?getNumberFromGaussianRandomMinMax(min,max,range):maxL; 
+  	return maxL;
+
+  }
+  
+  public static AbstractRealDistribution getGaussianRandomGenerator(int range)
+  {
+	double seed = 0.0;
+  	NormalDistribution random1 = new NormalDistribution(-1,1);
+  	return random1;
+
+  }
+  public static AbstractRealDistribution getUniformRandomGenerator(int range)
+  {
+	double seed = 0.0;
+  	UniformRealDistribution random1 = new UniformRealDistribution(0,1);
+  	return random1;
+
+  }
+  public static AbstractRealDistribution getParetoRandomGenerator(int range)
+  {
+	  double seed = 0.0;
+	  if(range > 0) seed = range;
+	  ParetoDistribution random1 = new ParetoDistribution(1,seed);
+  	  return random1;
+
+  }
+  
+  public static Long getNumberFromUniformRandomMinMax(long min,long max)
+  {
+	double seed = 0.0;
+//	if(seedIn > 0) seed = seedIn;
+  	if(min >= max) return new Long(max);
+  	
+  	UniformRealDistribution randomUniform = new UniformRealDistribution(0,1);
+  	
+  	double number = randomUniform.sample();
+  	if(!Utility.isPositiveLong(number)){
+  		number *= -1;
+  	}
+  	Long maxL = Math.round( max * number);
+//  	System.out.println(number);
+//  	System.out.println(maxL);
+  	maxL = maxL> max?getNumberFromUniformRandomMinMax(min,max):maxL;
+  	maxL = maxL<min?getNumberFromUniformRandomMinMax(min,max):maxL; 
+  	return maxL;
+
+  }
+
+  
   public static Long getNumberFromRandomMinMax(long min,long max)
   {
 	
@@ -606,6 +732,13 @@ import javax.imageio.ImageIO;
 //	 return isPositive;
 	 
    }
+   public static boolean isPositiveLong(double n){
+	 return n<0?false:true;
+//	 boolean isPositive = ((n % (n - 0.03125)) * n) / 0.03125 == n;
+//	 return isPositive;
+	 
+   }
+   
    public static boolean isPositiveInt(Integer n){
 	 return n.signum(n)<0?false:true;
 	 //	 boolean isPositive = ((n % (n - 0.03125)) * n) / 0.03125 == n;
@@ -621,7 +754,15 @@ import javax.imageio.ImageIO;
 	    	 return false;
 	  }
    }
-
+   public static boolean isEvenNumber(Long n) {
+	   if ( n % 2 == 0 ) {
+	        return true;
+	   }
+	     else {
+	    	 return false;
+	  }
+   }
+   
    public static boolean isDouble(String str)  
    {  
    	 try  
