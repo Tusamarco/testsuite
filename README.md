@@ -67,15 +67,17 @@ QueueProcessor      : `./run.sh QueueProcessor "threads=1,skiplocked=true,items=
 
 GenerateData        : `./run.sh GenerateData "url=jdbc:mysql://192.168.4.55:3306, user=dba,password=<secret>,verbose=true,summary=true,parameters=&characterEncoding=UTF-8,reportCSV=true,sleep=1000,printStatusDone=true,schema=bobo,savechunksize=100,numberofaddresses=1000,numberofusers=2000"	` 
 
-##GenerateData class
-This is a special class that can generate random user data. It must be associated to the data coming in test_generate_dataset.sql and once in place requires the data in test_dataset.sql 
+##GenerateData class 
+
+This is a special class that can generate random user data. It must be associated to the data coming in test_generate_dataset.sql and once in place requires the data in data_test.sql 
+[See here](GenerateData.md)
 
 ## Output
 All tests have a VERBOSE and SUMMARY mode. You can enable/disable them as you like.
 All tests have a CSV option, when used you will get output in easy to import format for analysis
 
 # Bugs 
-* Please report any bug a
+* Please report any bug 
 * Please suggest any test you would like to add
 
 
