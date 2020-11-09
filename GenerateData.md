@@ -37,4 +37,5 @@ Once data is loaded. You can test the effect using [**stresstool**](https://gith
 I have just build a case **social1** to emulate a messaging platform, but to see how this works please refer to **stresstool** specific instructions.
 
 A side note: there are almost NO index in the schema YOU MUST add them reflecting the kind of query you want to generate/use. 
- 
+
+As reference you can check the [data_test schema](tools/data_test_schema.sql) and an example of the [social1](tools/social_schema.sql) 
