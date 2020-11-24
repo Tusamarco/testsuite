@@ -106,6 +106,10 @@ public class StaleReadTest extends TestBase {
 		try {
 			writeConn = this.getConnectionProvider().getSimpleMySQLConnection();
 			readConn  = this.getConnectionProviderRead().getSimpleMySQLConnection();
+			if(!checkReaderNode(writeConn,readConn)) {
+				System.out.print(" Writer and Reader must be different hosts.\n Unable to get different hosts\nExit ");
+				System.exit(1);
+			}
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
@@ -128,7 +132,48 @@ public class StaleReadTest extends TestBase {
 		System.exit(0);
 				
 	}
+    private boolean checkReaderNode(Connection write, Connection read) {
+		try {
+			
+			String wHostName = null;
+			String rHostName = null;
+			int iCountdown = 5;
+			do {
+				ResultSet wrs = write.createStatement().executeQuery("select @@hostname host");
+				ResultSet rrs = read.createStatement().executeQuery("select @@hostname host");
+				if(wrs !=null) {
+					while(wrs.next()) {
+					wHostName = wrs.getString("host");
+					}
+					wrs.close();
+				}
+				if(rrs !=null) {
+					while(rrs.next()) {
+					rHostName = rrs.getString("host");
+					}
+					rrs.close();
+				}
+				iCountdown--;
+				if(!rHostName.equals(wHostName)) {
+					System.out.print("Ok I have identified valid hosts\n");
+					return true;
+				}
+				Thread.sleep(500);
+			}
+			while(rHostName.equals(wHostName) 
+					&& iCountdown > 0);
 
+			
+	}
+	catch(SQLException ex) {
+		ex.printStackTrace();
+	} catch (InterruptedException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    	
+    	return false;
+    }
 	private void printReport() {
 		
 		
