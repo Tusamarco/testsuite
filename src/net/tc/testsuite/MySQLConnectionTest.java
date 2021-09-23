@@ -71,7 +71,13 @@ public class MySQLConnectionTest extends TestBase{
 			if(isReportCSV()) {
 				System.out.println((isVerbose()? "SqlOutput,":"")+"OpenTime(ns),OpenTime(us),CloseTime(ns),CloseTime(us)");
 			}
-			
+			/*TODO make this loop become a call to a runnableJOB
+			 * a Job class implementing runnable to be instantiated 1 to N times
+			 * Opening/closing  connections
+			 * will return a Map of values min/max/avg for open/close
+			 * Plus execution time total
+			 *
+			 */
 			for(int iLoop = 0; iLoop <= this.getLoops(); iLoop++) {
 				startOpenConenction = System.nanoTime();
 				conn = this.getConnectionProvider().getTesteMySQLConnection();
