@@ -42,6 +42,7 @@ func main() {
 	flag.StringVar(&params.User, "user", params.User, "Database user")
 	flag.StringVar(&params.Password, "password", params.Password, "Database password")
 	flag.StringVar(&params.Schema, "schema", params.Schema, "Database schema")
+	flag.StringVar(&params.Attributes, "attributes", params.Attributes, "Connection attributes IE: &autoReconnect=true")
 
 	flag.IntVar(&params.Loops, "loops", params.Loops, "Number of test loops to execute")
 	flag.IntVar(&params.Sleep, "sleep", params.Sleep, "Sleep time in milliseconds")

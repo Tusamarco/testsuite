@@ -7,7 +7,7 @@ type Params struct {
 	User       string
 	Password   string
 	Schema     string
-	Parameters string // Raw connection parameters (e.g., "&useSSL=false")
+	Attributes string // Raw connection parameters (e.g., "&useSSL=false")
 
 	// --- Base Test Settings ---
 	Loops     int  // Number of iterations
@@ -24,9 +24,9 @@ type Params struct {
 	AwsMMSessionConsistencyLevel string // E.g., "INSTANCE_RAW", "REGIONAL_RAW"
 	ToleranceNanosec             int64  // Tolerance threshold for stale reads
 
-	Module     string
-	SleepTime  int
-	ConnParams ConnectionParameters
+	Module      string
+	PingTimeout int
+	//ConnParams ConnectionParameters
 }
 
 // NewParams creates a Params struct initialized with the default values
@@ -34,11 +34,12 @@ type Params struct {
 func NewParams() *Params {
 	return &Params{
 		// Database Defaults
-		Url:        "",
-		User:       "test_user",
-		Password:   "test_password",
-		Schema:     "test",
-		Parameters: "&autoReconnect=true",
+		Url:         "",
+		User:        "app_test",
+		Password:    "test",
+		Schema:      "mysql",
+		Attributes:  "&autoReconnect=true",
+		PingTimeout: 1000, //TODO Check Ping timeout in millisecond
 
 		// Base Test Defaults
 		Loops:     50,

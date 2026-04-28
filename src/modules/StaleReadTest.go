@@ -10,18 +10,20 @@ import (
 	Global "testsuite/src/global"
 	"testsuite/src/utils"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // StaleReadTest tests for replication lag/stale reads between writer and reader nodes.
 type StaleReadTest struct {
 	*TestBase // Embeds TestBase
 
-	ConnectionProviderRead ConnectionProvider
-	RowsNumber             int
-	ToleranceNanosec       int64
-	Results                map[string][]int64
-	StaleReads             int
-	PrintStatusDone        bool
+	//ConnectionProviderRead ConnectionProvider
+	RowsNumber       int
+	ToleranceNanosec int64
+	Results          map[string][]int64
+	StaleReads       int
+	PrintStatusDone  bool
 }
 
 // NewStaleReadTest initializes the test with default values.
@@ -54,44 +56,29 @@ func (staleR *StaleReadTest) Run() {
 		staleR.Sleep = 2000
 	}
 
-	if val, ok := staleR.Config["rowsNumber"]; ok {
-		if vStr, isStr := val.(string); isStr {
-			if parsed, err := strconv.Atoi(vStr); err == nil {
-				staleR.RowsNumber = parsed
-			}
-		}
+	if staleR.Sleep < 1000 {
+		staleR.Sleep = 1000
 	}
 
-	if val, ok := staleR.Config["printStatusDone"]; ok {
-		if vStr, isStr := val.(string); isStr {
-			if parsed, err := strconv.ParseBool(vStr); err == nil {
-				staleR.PrintStatusDone = parsed
-			}
-		}
-	}
+	//if val, ok := staleR.Config["printStatusDone"]; ok {
+	//	if vStr, isStr := val.(string); isStr {
+	//		if parsed, err := strconv.ParseBool(vStr); err == nil {
+	//			staleR.PrintStatusDone = parsed
+	//		}
+	//	}
+	//}
 
 	// Handle urlRead override for the reader connection provider
-	if urlRead, ok := staleR.Config["urlRead"]; ok && urlRead != nil {
-		newConfig := make(map[string]any)
-		for k, v := range staleR.Config {
-			newConfig[k] = v
-		}
-		newConfig["url"] = urlRead
-		// staleR.ConnectionProviderRead = db.NewConnectionProvider(newConfig)
-	} else {
-		// staleR.ConnectionProviderRead = db.NewConnectionProvider(staleR.Config)
-	}
-
-	if val, ok := staleR.Config["awsMMsessionConsistencyLevel"]; ok && val != nil {
-		strVal := fmt.Sprint(val)
-		if strVal == "REGIONAL_RAW" || strVal == "INSTANCE_RAW" {
-			staleR.AwsMMSessionConsistencyLevel = strVal
-		} else {
-			fmt.Println("\nInvalid parameter for awsMMsessionConsistencyLevel")
-			fmt.Print(staleR.ShowHelp())
-			os.Exit(1)
-		}
-	}
+	//if urlRead, ok := staleR.Config["urlRead"]; ok && urlRead != nil {
+	//	newConfig := make(map[string]any)
+	//	for k, v := range staleR.Config {
+	//		newConfig[k] = v
+	//	}
+	//	newConfig["url"] = urlRead
+	//	// staleR.ConnectionProviderRead = db.NewConnectionProvider(newConfig)
+	//} else {
+	//	// staleR.ConnectionProviderRead = db.NewConnectionProvider(staleR.Config)
+	//}
 
 	if staleR.ReportCSV && staleR.PrintStatusDone {
 		staleR.PrintStatusDone = false
@@ -106,45 +93,88 @@ func (staleR *StaleReadTest) Run() {
 
 func (staleR *StaleReadTest) executeLocal() {
 	ctx := context.Background()
+	//type ConnectionParameters struct {
+	//	User               string
+	//	Password           string
+	//	Host               string
+	//	Port               int
+	//	Attributes         string
+	//	UseSsl             bool
+	//	SslCertificatePath string
+	//	SslCa              string
+	//	SslClient          string
+	//	SslKey             string
+	//	PingTimeout        int
+	//}
 
-	writeConn, err := staleR.ConnectionProvider.GetMySQLConnection(ctx)
+	host, port, success := staleR.TestBase.SplitIPAndPort(staleR.Parameters.Url)
+	if success == false {
+		log.Errorf("StaleReadTest: SplitIPAndPort failed")
+	}
+
+	porti, err := strconv.Atoi(port)
 	if err != nil {
-		fmt.Printf("Error getting write connection: %v\n", err)
+		log.Errorf("StaleReadTest: Port is not valid: %s", err)
+	}
+
+	cParams := Global.ConnectionParameters{
+		User:        staleR.Parameters.User,
+		Password:    staleR.Parameters.Password,
+		Host:        host,
+		Port:        porti,
+		Attributes:  staleR.Parameters.Attributes,
+		PingTimeout: staleR.Parameters.PingTimeout,
+		//Todo add all the ssl shit
+	}
+
+	success, writeConn := staleR.TestBase.GetConnection(cParams)
+	if success == false {
+		log.Errorf("Error getting write connection: %v\n", err)
 		os.Exit(1)
 	}
 
-	readConn, err := staleR.ConnectionProviderRead.GetMySQLConnection(ctx)
-	if err != nil {
-		fmt.Printf("Error getting read connection: %v\n", err)
+	hostR, portR, successR := staleR.TestBase.SplitIPAndPort(staleR.Parameters.UrlRead)
+	portiR, _ := strconv.Atoi(portR)
+
+	cParams.Host = hostR
+	cParams.Port = portiR
+
+	if successR == false {
+		log.Errorf("StaleReadTest: SplitIPAndPort failed")
+	}
+
+	successR, readConn := staleR.TestBase.GetConnection(cParams)
+	if successR == false {
+		log.Errorf("Error getting read connection: %v\n", err)
 		os.Exit(1)
 	}
 
-	if !staleR.checkReaderNode(ctx, writeConn, readConn) {
+	if !staleR.checkReaderNode(ctx, writeConn.Connection, readConn.Connection) {
 		fmt.Println(" Writer and Reader must be different hosts.\n Unable to get different hosts\nExit ")
 		os.Exit(1)
 	}
 
-	if !staleR.createTable(ctx, writeConn) {
+	if !staleR.createTable(ctx, writeConn.Connection) {
 		fmt.Println(" Error Cannot create table ")
 	}
 
-	if !staleR.fillTable(ctx, writeConn) {
+	if !staleR.fillTable(ctx, writeConn.Connection) {
 		fmt.Println(" Error Cannot fill table with data")
 	}
 
-	if !staleR.executeStaleReadTest(ctx, writeConn, readConn) {
+	if !staleR.executeStaleReadTest(ctx, writeConn.Connection, readConn.Connection) {
 		fmt.Println(" Error Cannot execute test")
 	}
 
-	staleR.ConnectionProvider.ReturnConnection(writeConn)
-	staleR.ConnectionProviderRead.ReturnConnection(readConn)
+	writeConn.Connection.Close()
+	readConn.Connection.Close()
 
 	if staleR.Summary {
 		staleR.printReport()
 	}
 }
 
-func (staleR *StaleReadTest) checkReaderNode(ctx context.Context, write, read *sql.Conn) bool {
+func (staleR *StaleReadTest) checkReaderNode(ctx context.Context, write, read *sql.DB) bool {
 	for iCountdown := 5; iCountdown > 0; iCountdown-- {
 		var wHostName, rHostName string
 
@@ -160,7 +190,7 @@ func (staleR *StaleReadTest) checkReaderNode(ctx context.Context, write, read *s
 	return false
 }
 
-func (staleR *StaleReadTest) createTable(ctx context.Context, connWrite *sql.Conn) bool {
+func (staleR *StaleReadTest) createTable(ctx context.Context, connWrite *sql.DB) bool {
 	drop := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`staleread`;", staleR.SchemaName)
 
 	var sb strings.Builder
@@ -192,8 +222,8 @@ func (staleR *StaleReadTest) createTable(ctx context.Context, connWrite *sql.Con
 	return true
 }
 
-func (staleR *StaleReadTest) fillTable(ctx context.Context, writeConn *sql.Conn) bool {
-	dateStart := utils.GetTimeStampFormatted(time.Now().UnixMilli(), "15:04:05") // Time format for MySQL
+func (staleR *StaleReadTest) fillTable(ctx context.Context, writeConn *sql.DB) bool {
+	dateStart := utils.GetTimeStampFormatted(time.Now().UnixMilli(), "2006-01-02 15:04:05") // Time format for MySQL
 	fmt.Println("Loading table ... please wait")
 
 	if staleR.AwsMMSessionConsistencyLevel != "" {
@@ -233,7 +263,7 @@ func (staleR *StaleReadTest) fillTable(ctx context.Context, writeConn *sql.Conn)
 	return true
 }
 
-func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn, readConn *sql.Conn) bool {
+func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn, readConn *sql.DB) bool {
 	if staleR.AwsMMSessionConsistencyLevel != "" {
 		writeConn.ExecContext(ctx, fmt.Sprintf("SET SESSION aurora_mm_session_consistency_level='%s'", staleR.AwsMMSessionConsistencyLevel))
 		readConn.ExecContext(ctx, fmt.Sprintf("SET SESSION aurora_mm_session_consistency_level='%s'", staleR.AwsMMSessionConsistencyLevel))
@@ -251,7 +281,7 @@ func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn
 	var readTime []int64
 	var lagTime []int64
 
-	dateRun := utils.GetTimeStampFormatted(time.Now().UnixMilli(), "15:04:05")
+	dateRun := utils.GetTimeStampFormatted(time.Now().UnixMilli(), "2006-01-02 15:04:05")
 	var sb strings.Builder
 
 	if !staleR.ReportCSV {
@@ -351,7 +381,7 @@ func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn
 	return true
 }
 
-func (staleR *StaleReadTest) checkRecord(ctx context.Context, rstmt *sql.Conn, sqlR string) [2]int64 {
+func (staleR *StaleReadTest) checkRecord(ctx context.Context, rstmt *sql.DB, sqlR string) [2]int64 {
 	var values [2]int64
 	readStart := time.Now().UnixNano()
 
@@ -370,7 +400,7 @@ func (staleR *StaleReadTest) checkRecord(ctx context.Context, rstmt *sql.Conn, s
 	return values
 }
 
-func (staleR *StaleReadTest) getIds(ctx context.Context, wstmt *sql.Conn) []int64 {
+func (staleR *StaleReadTest) getIds(ctx context.Context, wstmt *sql.DB) []int64 {
 	var ids []int64
 	rows, err := wstmt.QueryContext(ctx, fmt.Sprintf("SELECT id from %s.staleread", staleR.SchemaName))
 	if err != nil {

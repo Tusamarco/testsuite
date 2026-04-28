@@ -141,17 +141,17 @@ func GetTimestamp() string {
 
 // GetTimeStampFormatted formats a unix timestamp using a given format string.
 // Falls back to a standard format if none provided.
-func GetTimeStampFormatted(systemTimeMilli int64, format ...string) string {
+func GetTimeStampFormatted(systemTimeMilli int64, format string) string {
 	if systemTimeMilli == 0 {
 		return ""
 	}
 	t := time.UnixMilli(systemTimeMilli)
-	layout := "2006-01-02 15:04:05" // Default Go layout equivalent to yyyy-MM-dd HH:mm:ss
-	if len(format) > 0 {
-		// Note: A true Java SimpleDateFormat to Go layout conversion helper
-		// is recommended if complex dynamic Java strings are passed.
-		layout = format[0]
-	}
+	layout := format // Default Go layout equivalent to yyyy-MM-dd HH:mm:ss
+	//if len(format) > 0 {
+	//	// Note: A true Java SimpleDateFormat to Go layout conversion helper
+	//	// is recommended if complex dynamic Java strings are passed.
+	//	layout = format[0]
+	//}
 	return t.Format(layout)
 }
 

@@ -18,16 +18,16 @@ import (
 	// "net.tc/data/db"
 	// "net.tc/utils"
 
+	Global "testsuite/src/global"
+
 	"github.com/go-sql-driver/mysql"
 	log "github.com/sirupsen/logrus"
-	Global "testsuite/src/global"
 )
 
 // TestBase holds the configuration and state for tests.
 type TestBase struct {
-	ConnectionProvider           ConnectionProvider
-	Config                       map[string]any
-	PippoParameters              map[string]string
+	//ConnectionProvider           ConnectionProvider
+	//Config                       map[string]any
 	Parameters                   Global.Params
 	Loops                        int
 	Sleep                        int
@@ -42,6 +42,7 @@ type TestBase struct {
 	StartTime                    float64
 	EndTime                      float64
 	AwsMMSessionConsistencyLevel string
+	PingTimeout                  int
 }
 
 type DataNode struct {
@@ -60,7 +61,6 @@ func (dataNode *DataNode) Close() {
 // NewTestBase acts as a constructor, initializing default values and maps.
 func NewTestBase(params Global.Params) *TestBase {
 	return &TestBase{
-		Config:                  make(map[string]any),
 		Parameters:              params,
 		Loops:                   50,
 		Sleep:                   0,
@@ -71,6 +71,7 @@ func NewTestBase(params Global.Params) *TestBase {
 		FormattingLengthForNano: 15,
 		StartConnTimes:          []int64{},
 		EndConnTimes:            []int64{},
+		SchemaName:              params.Schema,
 	}
 }
 
@@ -193,7 +194,7 @@ func (t *TestBase) GetConnection(cParams Global.ConnectionParameters) (bool, *Da
 
 	// 5. Build DSN cleanly using fmt.Sprintf
 	hostPort := net.JoinHostPort(cParams.Host, strconv.Itoa(cParams.Port))
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/performance_schema%s", cParams.User, cParams.Password, hostPort, attributes)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s%s", cParams.User, cParams.Password, hostPort, t.SchemaName, attributes)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -217,4 +218,14 @@ func (t *TestBase) GetConnection(cParams Global.ConnectionParameters) (bool, *Da
 	}
 
 	return true, dataObject
+}
+
+func (t *TestBase) SplitIPAndPort(address string) (host string, port string, bool2 bool) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		log.Errorf("StaleReadTest: SplitIPAndPort failed: %s", err)
+		return "", "", false
+	}
+
+	return host, port, true
 }
