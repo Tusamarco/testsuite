@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"testsuite/internal/config"
@@ -251,6 +252,16 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int) {
 	resultsCh := make(chan cpOpResult, totalOps)
 	var wg sync.WaitGroup
 
+	// Print progress every ~10% of total ops, minimum every 100, maximum every 10_000.
+	progressEvery := int64(totalOps / 10)
+	if progressEvery < 100 {
+		progressEvery = 100
+	}
+	if progressEvery > 10_000 {
+		progressEvery = 10_000
+	}
+	var opCounter int64
+
 	startTime := time.Now()
 
 	for w := 0; w < workers; w++ {
@@ -264,6 +275,7 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int) {
 				t2 := time.Now()
 				if err != nil {
 					resultsCh <- cpOpResult{err: err}
+					atomic.AddInt64(&opCounter, 1)
 					continue
 				}
 
@@ -284,6 +296,14 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int) {
 					res.err = qErr
 				}
 				resultsCh <- res
+
+				cur := atomic.AddInt64(&opCounter, 1)
+				if !t.ReportCSV && cur%progressEvery == 0 {
+					fmt.Printf("  [progress] %d / %d ops (%.0f%%) elapsed: %s\n",
+						cur, totalOps,
+						float64(cur)/float64(totalOps)*100,
+						time.Since(startTime).Round(time.Millisecond))
+				}
 
 				if t.Sleep > 0 {
 					time.Sleep(time.Duration(t.Sleep) * time.Millisecond)
