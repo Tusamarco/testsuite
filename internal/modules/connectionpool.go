@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -299,10 +300,7 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int) {
 
 				cur := atomic.AddInt64(&opCounter, 1)
 				if !t.ReportCSV && cur%progressEvery == 0 {
-					fmt.Printf("  [progress] %d / %d ops (%.0f%%) elapsed: %s\n",
-						cur, totalOps,
-						float64(cur)/float64(totalOps)*100,
-						time.Since(startTime).Round(time.Millisecond))
+					cpProgressBar(cur, int64(totalOps), time.Since(startTime))
 				}
 
 				if t.Sleep > 0 {
@@ -314,6 +312,10 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int) {
 
 	wg.Wait()
 	elapsed := time.Since(startTime)
+	if !t.ReportCSV {
+		cpProgressBar(int64(totalOps), int64(totalOps), elapsed)
+		fmt.Println()
+	}
 	close(resultsCh)
 
 	mysqlAfter := t.captureMySQLStats(db)
@@ -482,6 +484,19 @@ func (t *ConnectionPoolTest) printHeader(db *sql.DB) {
 	fmt.Printf("  MySQL:      thread_cache_size=%d  currently cached=%d  created=%d\n",
 		mysqlStats.threadCacheSize, mysqlStats.threadsCached, mysqlStats.threadsCreated)
 	fmt.Println(bar)
+}
+
+// cpProgressBar prints an in-place progress bar to stdout, overwriting the current line.
+func cpProgressBar(cur, total int64, elapsed time.Duration) {
+	const width = 30
+	pct := float64(cur) / float64(total)
+	filled := int(pct * float64(width))
+	if filled > width {
+		filled = width
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	fmt.Printf("\r  [%s] %3.0f%%  %d/%d  %s   ",
+		bar, pct*100, cur, total, elapsed.Round(time.Millisecond))
 }
 
 // cpMean returns the arithmetic mean of a slice of int64.
