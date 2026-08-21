@@ -1,4 +1,4 @@
-package Global
+package config
 
 type Params struct {
 	// --- Database Configuration ---
@@ -26,11 +26,21 @@ type Params struct {
 
 	Module      string
 	PingTimeout int
-	//ConnParams ConnectionParameters
+
+	// --- ConnectionPoolTest settings ---
+	Workers            int    // Number of concurrent goroutines
+	MaxOpenConns       int    // sql.DB SetMaxOpenConns
+	MaxIdleConns       int    // sql.DB SetMaxIdleConns
+	ConnMaxLifetimeSec int    // sql.DB SetConnMaxLifetime (seconds, 0 = unlimited)
+	PayloadSize        string // small|medium|large|xlarge
+	RampWorkers        bool   // If true, iterate worker counts from 1 up to Workers
+	WarmupLoops        int    // Warmup iterations before measurement
+
+	// --- DataGenTest settings ---
+	BatchSize int  // Number of rows per INSERT batch
+	Truncate  bool // Truncate tables before loading data
 }
 
-// NewParams creates a Params struct initialized with the default values
-// found in your original Java implementation.
 func NewParams() *Params {
 	return &Params{
 		// Database Defaults
@@ -39,11 +49,11 @@ func NewParams() *Params {
 		Password:    "test",
 		Schema:      "mysql",
 		Attributes:  "&autoReconnect=true",
-		PingTimeout: 1000, //TODO Check Ping timeout in millisecond
+		PingTimeout: 1000,
 
 		// Base Test Defaults
 		Loops:     50,
-		Sleep:     0, // Note: StaleReadTest explicitly overrides this to 2000 if it is <= 0
+		Sleep:     0,
 		Verbose:   false,
 		Summary:   false,
 		ReportCSV: false,
@@ -52,7 +62,19 @@ func NewParams() *Params {
 		PrintConnectionTime: true,
 		RowsNumber:          10000,
 		PrintStatusDone:     false,
-		ToleranceNanosec:    5000, // 5 microseconds default tolerance
+		ToleranceNanosec:    5000,
+
+		// ConnectionPoolTest Defaults
+		Workers:            8,
+		MaxOpenConns:       10,
+		MaxIdleConns:       5,
+		ConnMaxLifetimeSec: 0,
+		PayloadSize:        "small",
+		RampWorkers:        false,
+		WarmupLoops:        5,
+
+		BatchSize: 500,
+		Truncate:  true,
 	}
 }
 
@@ -71,6 +93,5 @@ type ConnectionParameters struct {
 }
 
 func GetParams() *Params {
-
 	return NewParams()
 }

@@ -7,18 +7,18 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	Global "testsuite/src/global"
-	"testsuite/src/utils"
 	"time"
+
+	"testsuite/internal/config"
+	"testsuite/internal/utils"
 
 	log "github.com/sirupsen/logrus"
 )
 
 // StaleReadTest tests for replication lag/stale reads between writer and reader nodes.
 type StaleReadTest struct {
-	*TestBase // Embeds TestBase
+	*TestBase
 
-	//ConnectionProviderRead ConnectionProvider
 	RowsNumber       int
 	ToleranceNanosec int64
 	Results          map[string][]int64
@@ -26,59 +26,28 @@ type StaleReadTest struct {
 	PrintStatusDone  bool
 }
 
-// NewStaleReadTest initializes the test with default values.
-func NewStaleReadTest(params Global.Params) *StaleReadTest {
+func NewStaleReadTest(params config.Params) *StaleReadTest {
 	testBase := NewTestBase(params)
 	return &StaleReadTest{
 		TestBase:         testBase,
 		RowsNumber:       params.RowsNumber,
-		ToleranceNanosec: params.ToleranceNanosec, // 5 microseconds
+		ToleranceNanosec: params.ToleranceNanosec,
 		Results:          make(map[string][]int64),
 	}
 }
 
 func (staleR *StaleReadTest) LocalInit() {}
 
-// Run is the entry point replacing the Java main method.
 func (staleR *StaleReadTest) Run() {
-
-	//cleanArgs := strings.ReplaceAll(args[0], " ", "")
-	//argsLoc := strings.Split(cleanArgs, ",")
-
-	//staleR.GenerateConfig(DefaultsConnection)
 	staleR.Init()
 	staleR.LocalInit()
-
-	// Note: You would initialize your actual provider here
-	// staleR.ConnectionProvider = db.NewConnectionProvider(staleR.Config)
 
 	if staleR.Sleep <= 0 {
 		staleR.Sleep = 2000
 	}
-
 	if staleR.Sleep < 1000 {
 		staleR.Sleep = 1000
 	}
-
-	//if val, ok := staleR.Config["printStatusDone"]; ok {
-	//	if vStr, isStr := val.(string); isStr {
-	//		if parsed, err := strconv.ParseBool(vStr); err == nil {
-	//			staleR.PrintStatusDone = parsed
-	//		}
-	//	}
-	//}
-
-	// Handle urlRead override for the reader connection provider
-	//if urlRead, ok := staleR.Config["urlRead"]; ok && urlRead != nil {
-	//	newConfig := make(map[string]any)
-	//	for k, v := range staleR.Config {
-	//		newConfig[k] = v
-	//	}
-	//	newConfig["url"] = urlRead
-	//	// staleR.ConnectionProviderRead = db.NewConnectionProvider(newConfig)
-	//} else {
-	//	// staleR.ConnectionProviderRead = db.NewConnectionProvider(staleR.Config)
-	//}
 
 	if staleR.ReportCSV && staleR.PrintStatusDone {
 		staleR.PrintStatusDone = false
@@ -93,22 +62,9 @@ func (staleR *StaleReadTest) Run() {
 
 func (staleR *StaleReadTest) executeLocal() {
 	ctx := context.Background()
-	//type ConnectionParameters struct {
-	//	User               string
-	//	Password           string
-	//	Host               string
-	//	Port               int
-	//	Attributes         string
-	//	UseSsl             bool
-	//	SslCertificatePath string
-	//	SslCa              string
-	//	SslClient          string
-	//	SslKey             string
-	//	PingTimeout        int
-	//}
 
 	host, port, success := staleR.TestBase.SplitIPAndPort(staleR.Parameters.Url)
-	if success == false {
+	if !success {
 		log.Errorf("StaleReadTest: SplitIPAndPort failed")
 	}
 
@@ -117,18 +73,17 @@ func (staleR *StaleReadTest) executeLocal() {
 		log.Errorf("StaleReadTest: Port is not valid: %s", err)
 	}
 
-	cParams := Global.ConnectionParameters{
+	cParams := config.ConnectionParameters{
 		User:        staleR.Parameters.User,
 		Password:    staleR.Parameters.Password,
 		Host:        host,
 		Port:        porti,
 		Attributes:  staleR.Parameters.Attributes,
 		PingTimeout: staleR.Parameters.PingTimeout,
-		//Todo add all the ssl shit
 	}
 
 	success, writeConn := staleR.TestBase.GetConnection(cParams)
-	if success == false {
+	if !success {
 		log.Errorf("Error getting write connection: %v\n", err)
 		os.Exit(1)
 	}
@@ -139,12 +94,12 @@ func (staleR *StaleReadTest) executeLocal() {
 	cParams.Host = hostR
 	cParams.Port = portiR
 
-	if successR == false {
-		log.Errorf("StaleReadTest: SplitIPAndPort failed")
+	if !successR {
+		log.Errorf("StaleReadTest: SplitIPAndPort failed for reader")
 	}
 
 	successR, readConn := staleR.TestBase.GetConnection(cParams)
-	if successR == false {
+	if !successR {
 		log.Errorf("Error getting read connection: %v\n", err)
 		os.Exit(1)
 	}
@@ -207,14 +162,12 @@ func (staleR *StaleReadTest) createTable(ctx context.Context, connWrite *sql.DB)
 		connWrite.ExecContext(ctx, fmt.Sprintf("SET SESSION aurora_mm_session_consistency_level='%s'", staleR.AwsMMSessionConsistencyLevel))
 	}
 
-	_, err := connWrite.ExecContext(ctx, drop)
-	if err != nil {
+	if _, err := connWrite.ExecContext(ctx, drop); err != nil {
 		fmt.Printf("Error dropping table: %v\n", err)
 		return false
 	}
 
-	_, err = connWrite.ExecContext(ctx, sb.String())
-	if err != nil {
+	if _, err := connWrite.ExecContext(ctx, sb.String()); err != nil {
 		fmt.Printf("Error creating table: %v\n", err)
 		return false
 	}
@@ -223,7 +176,7 @@ func (staleR *StaleReadTest) createTable(ctx context.Context, connWrite *sql.DB)
 }
 
 func (staleR *StaleReadTest) fillTable(ctx context.Context, writeConn *sql.DB) bool {
-	dateStart := utils.GetTimeStampFormatted(time.Now().UnixMilli(), "2006-01-02 15:04:05") // Time format for MySQL
+	dateStart := utils.GetTimeStampFormatted(time.Now().UnixMilli(), "2006-01-02 15:04:05")
 	fmt.Println("Loading table ... please wait")
 
 	if staleR.AwsMMSessionConsistencyLevel != "" {
@@ -234,7 +187,6 @@ func (staleR *StaleReadTest) fillTable(ctx context.Context, writeConn *sql.DB) b
 
 	totRows := 0
 	for totRows < staleR.RowsNumber {
-		// In Go, batching is typically done via a Transaction and Prepared Statements
 		tx, err := writeConn.BeginTx(ctx, nil)
 		if err != nil {
 			return false
@@ -247,8 +199,7 @@ func (staleR *StaleReadTest) fillTable(ctx context.Context, writeConn *sql.DB) b
 		}
 
 		for subBatch := 1; subBatch <= 100 && totRows < staleR.RowsNumber; subBatch++ {
-			_, err = stmt.ExecContext(ctx)
-			if err == nil {
+			if _, err = stmt.ExecContext(ctx); err == nil {
 				totRows++
 			}
 		}
@@ -314,11 +265,7 @@ func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn
 		sqlR := fmt.Sprintf("SELECT id FROM %s.staleread WHERE id = %d and staleR = '%s'", staleR.SchemaName, id, dateRun)
 
 		startTimeWrite := time.Now().UnixNano()
-
 		writeConn.ExecContext(ctx, sqlW)
-		// Note: The original Java called `wstmt.execute("COMMIT")` and `writeConn.commit()`.
-		// In Go database/sql, connections default to auto-commit unless wrapped in a `BeginTx`.
-
 		startTimeRead := time.Now().UnixNano()
 		writeTimei := startTimeRead - startTimeWrite
 
@@ -336,7 +283,6 @@ func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn
 			if checkRecords[0] < 1 {
 				lag = true
 			}
-			// Java code added readTime checkRecords[1] on every retry
 		}
 
 		readTimei := checkRecords[1]
@@ -364,7 +310,7 @@ func (staleR *StaleReadTest) executeStaleReadTest(ctx context.Context, writeConn
 			fmt.Printf("Currently executed %.4f %%\n", pctDone)
 		}
 
-		sb.Reset() // Clear the builder
+		sb.Reset()
 
 		if staleR.Loops < staleR.RowsNumber && iCounter >= staleR.Loops {
 			break
@@ -385,13 +331,11 @@ func (staleR *StaleReadTest) checkRecord(ctx context.Context, rstmt *sql.DB, sql
 	var values [2]int64
 	readStart := time.Now().UnixNano()
 
-	// In Go, we don'staleR have rs.last() and rs.getRow() to verify records exist quickly.
-	// Instead, we scan into a throwaway variable to check if a row was returned.
 	var throwawayID int64
 	err := rstmt.QueryRowContext(ctx, sqlR).Scan(&throwawayID)
 
 	if err == nil {
-		values[0] = 1 // Row found
+		values[0] = 1
 	} else if err != sql.ErrNoRows {
 		fmt.Printf("Error checking record: %v\n", err)
 	}
@@ -439,7 +383,6 @@ func (staleR *StaleReadTest) printReport() {
 	readTimeData := staleR.Results["readTime"]
 	lagTimeData := staleR.Results["lagTime"]
 
-	// The MathU functions were converted to handle []int64
 	averageWrite, _ := utils.GetAverage(writeTimeData)
 	averageRead, _ := utils.GetAverage(readTimeData)
 	averageLag, _ := utils.GetAverage(lagTimeData)
@@ -482,11 +425,9 @@ func (staleR *StaleReadTest) printReport() {
 		averageReport.WriteString(fmt.Sprintf("\nAverage write time = %.3f", averageWrite))
 		averageReport.WriteString(fmt.Sprintf("\nAverage read time = %.3f", averageRead))
 		averageReport.WriteString(fmt.Sprintf("\nAverage lag time = %.3f", averageLag))
-
 		averageReport.WriteString(fmt.Sprintf("\nMax/Min Write time = %d/%d", maxWrite, minWrite))
 		averageReport.WriteString(fmt.Sprintf("\nMax/Min Read time = %d/%d", maxRead, minRead))
 		averageReport.WriteString(fmt.Sprintf("\nMax/Min lag time = %d/%d", maxLag, minLag))
-
 		averageReport.WriteString(fmt.Sprintf("\nstd Dev Write time = %.3f", stdWrite))
 		averageReport.WriteString(fmt.Sprintf("\nstd Dev Read time = %.3f", stdRead))
 		averageReport.WriteString(fmt.Sprintf("\nstd Dev lag time = %.3f", stdLag))
@@ -495,24 +436,16 @@ func (staleR *StaleReadTest) printReport() {
 	fmt.Println(averageReport.String())
 }
 
-// ShowHelp overrides the TestBase help payload with subclass-specific text.
 func (staleR *StaleReadTest) ShowHelp() string {
 	var sb strings.Builder
 	sb.WriteString(staleR.TestBase.ShowHelp())
-
 	sb.WriteString("\n****************************************\n Optional For the test: Stale read ")
-	sb.WriteString(" urlRead=jdbc:mysql://127.0.0.1:3307 \n" +
-		" if present the tool will compare the WRITES done against url\n" +
-		" with the reads from urlRead " +
-		" I not present the tool assume the presence of ProxySQL and will use only one Url" +
-		"\n" +
-		"rowsNumber [rowsNumber=10000]\n" +
-		"")
+	sb.WriteString(" urlRead=jdbc:mysql://127.0.0.1:3307 \n")
+	sb.WriteString("rowsNumber [rowsNumber=10000]\n")
 	sb.WriteString("=============")
 	sb.WriteString("sleep in this context refer to the time the test will wait after table load\n" +
 		"Default sleep = 2000 ms (2 seconds)")
 	sb.WriteString("\n\nawsMMsessionConsistencyLevel [awsMMsessionConsistencyLevel=null| INSTANCE_RAW|REGIONAL_RAW]\n")
-	sb.WriteString("\n\nprintStatusDone [printStatusDone=false] when enable will print % process increase if CSV output is NOT enable \n")
-
+	sb.WriteString("\n\nprintStatusDone [printStatusDone=false]\n")
 	return sb.String()
 }
