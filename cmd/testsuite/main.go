@@ -55,9 +55,13 @@ func main() {
 	flag.IntVar(&params.MaxOpenConns, "maxOpenConns", params.MaxOpenConns, "sql.DB MaxOpenConns (app pool size)")
 	flag.IntVar(&params.MaxIdleConns, "maxIdleConns", params.MaxIdleConns, "sql.DB MaxIdleConns (idle connections kept open)")
 	flag.IntVar(&params.ConnMaxLifetimeSec, "connMaxLifetimeSec", params.ConnMaxLifetimeSec, "sql.DB ConnMaxLifetime in seconds (0=unlimited)")
-	flag.StringVar(&params.PayloadSize, "payloadSize", params.PayloadSize, "Query payload size: small|medium|large|xlarge")
+	flag.StringVar(&params.PayloadSize, "payloadSize", params.PayloadSize, "Read payload size: small|medium|large|xlarge")
+	flag.IntVar(&params.WriteSize, "writeSize", params.WriteSize, "Write payload bytes per operation (0=read-only)")
+	flag.IntVar(&params.ConnReuse, "connReuse", params.ConnReuse, "SQL executions per connection before release (default 1)")
 	flag.BoolVar(&params.RampWorkers, "rampWorkers", params.RampWorkers, "Ramp workers from 1 up to --workers across scenarios")
 	flag.IntVar(&params.WarmupLoops, "warmupLoops", params.WarmupLoops, "Warmup iterations before measurement")
+	flag.IntVar(&params.Duration, "duration", params.Duration, "Test duration in seconds (0=use --loops)")
+	flag.IntVar(&params.ReportInterval, "reportInterval", params.ReportInterval, "Sysbench-style per-interval stats period in seconds (0=off)")
 
 	// DataGenTest flags
 	flag.IntVar(&params.BatchSize, "batchSize", params.BatchSize, "Rows per INSERT statement (datagen)")

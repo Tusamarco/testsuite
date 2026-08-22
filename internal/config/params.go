@@ -32,9 +32,13 @@ type Params struct {
 	MaxOpenConns       int    // sql.DB SetMaxOpenConns
 	MaxIdleConns       int    // sql.DB SetMaxIdleConns
 	ConnMaxLifetimeSec int    // sql.DB SetConnMaxLifetime (seconds, 0 = unlimited)
-	PayloadSize        string // small|medium|large|xlarge
+	PayloadSize        string // read payload: small|medium|large|xlarge
+	WriteSize          int    // write payload bytes per operation (0 = read-only)
+	ConnReuse          int    // SQL executions per acquired connection before release
 	RampWorkers        bool   // If true, iterate worker counts from 1 up to Workers
 	WarmupLoops        int    // Warmup iterations before measurement
+	Duration           int    // Test run duration in seconds (0 = use Loops)
+	ReportInterval     int    // Sysbench-style per-interval stats period in seconds (0 = off)
 
 	// --- DataGenTest settings ---
 	BatchSize int  // Number of rows per INSERT batch
@@ -70,8 +74,12 @@ func NewParams() *Params {
 		MaxIdleConns:       5,
 		ConnMaxLifetimeSec: 0,
 		PayloadSize:        "small",
+		WriteSize:          0,
+		ConnReuse:          1,
 		RampWorkers:        false,
 		WarmupLoops:        5,
+		Duration:           0,
+		ReportInterval:     5,
 
 		BatchSize: 500,
 		Truncate:  true,
