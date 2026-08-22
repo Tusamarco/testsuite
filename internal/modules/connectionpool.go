@@ -142,23 +142,54 @@ type cpCounters struct {
 
 // mysqlThreadStats captures MySQL server-side connection counters. We snapshot
 // these before and after each scenario; the deltas tell us exactly how many new
-// connections the scenario created and whether the thread cache absorbed them.
+// connections the scenario created and how the server's threading layer handled them.
+//
+// MySQL supports two threading models, selected by @@thread_handling:
+//
+//   - "one-thread-per-connection" (default community MySQL): each accepted
+//     client connection gets its own dedicated OS thread. The thread cache
+//     (thread_cache_size) lets the server reuse OS threads across sequential
+//     connections to amortise the cost of OS thread creation.
+//
+//   - "pool-of-threads" (Percona Server Thread Pool plugin, MySQL Enterprise):
+//     a fixed pool of worker threads multiplexes all client connections. No OS
+//     thread is ever created per-connection, so Threads_cached is always 0 and
+//     thread_cache_size is completely ignored by the server. The meaningful
+//     contention signal is the thread pool queue depth, not a cache hit rate.
+//
+// The collection and reporting code branches on threadHandling so that each
+// model shows its own relevant metrics and suppresses the irrelevant ones.
 type mysqlThreadStats struct {
-	// Standard SHOW STATUS / performance_schema.global_status variables.
+	// threadHandling is the value of @@thread_handling at snapshot time.
+	// "one-thread-per-connection" → use thread-cache metrics.
+	// "pool-of-threads"          → use thread-pool metrics; ignore cache fields.
+	threadHandling string
+
+	// Standard status variables — meaningful in both threading models.
 	threadsConnected int64 // currently open client connections
 	threadsRunning   int64 // connections actively executing SQL (not sleeping)
-	threadsCached    int64 // OS threads sitting in the thread cache, ready for reuse
-	threadsCreated   int64 // cumulative OS threads ever spawned (monotonically increasing)
 	connections      int64 // cumulative total connection attempts (monotonically increasing)
-	threadCacheSize  int64 // @@thread_cache_size — server's thread cache capacity
 
-	// The three fields below come from performance_schema.events_waits_summary_global_by_event_name
-	// for the event 'wait/io/socket/sql/client_connection'. This is the server's
-	// own measurement of how long it spent accepting new TCP connections — a
-	// complementary view to the client-side acquireNs, which also includes
-	// authentication and session setup time.
-	// Note: performance_schema timer values are in picoseconds; we convert them
-	// to nanoseconds on read by dividing by 1000.
+	// One-thread-per-connection model only.
+	// In pool-of-threads mode these are collected but not displayed, because:
+	//   - Threads_cached is always 0 (pool threads are never "cached")
+	//   - Threads_created delta is ~0 after pool init (no per-connection threads)
+	//   - The cache hit rate formula therefore gives a spurious 100%
+	threadsCached   int64 // OS threads sitting in the cache ready for reuse
+	threadsCreated  int64 // cumulative OS threads ever spawned (monotonically increasing)
+	threadCacheSize int64 // @@thread_cache_size (irrelevant in pool mode)
+
+	// Thread Pool plugin metrics — only populated when threadHandling == "pool-of-threads".
+	// These are the meaningful concurrency indicators when the pool plugin is active.
+	tpThreads       int64 // Threadpool_threads: total worker threads currently alive in the pool
+	tpIdleThreads   int64 // Threadpool_idle_threads: workers waiting for new requests
+	tpQueuedQueries int64 // Threadpool_queued_queries: requests waiting because no worker was free
+	tpSize          int64 // @@threadpool_size: configured maximum number of pool threads
+
+	// Performance schema socket wait instrumentation.
+	// Valid in both threading models: tracks how long the server spent accepting
+	// new TCP connections at the socket layer, independent of what thread handles them.
+	// Timer values from performance_schema are in picoseconds; we convert to ns on read.
 	psConnCount int64 // number of socket accept events recorded
 	psConnSumNs int64 // total server-side connection accept time (ns)
 	psConnAvgNs int64 // running average reported by performance_schema (ns)
@@ -786,30 +817,44 @@ func (t *ConnectionPoolTest) startIntervalReporter(
 // MySQL stats capture
 // ─────────────────────────────────────────────────────────────────────────────
 
-// captureMySQLStats reads server-side connection counters in a single round trip.
-// We query performance_schema.global_status first because it is a structured
-// table and faster to filter server-side. If that fails (e.g. the user lacks
-// SELECT on performance_schema, or the server is older than 5.7), we fall back
-// to the equivalent SHOW GLOBAL STATUS query.
+// captureMySQLStats reads server-side connection counters and detects the
+// active threading model (one-thread-per-connection vs Thread Pool plugin).
+// The correct set of metrics is collected for each model so the report never
+// displays misleading values (e.g. a thread-cache hit rate of "100%" when
+// the thread cache is completely bypassed by the pool plugin).
 //
-// The snapshot is taken with a normal db.QueryContext call (not a dedicated
-// conn.Conn) because we want it to go through the same pool as the workers —
-// the small timing overhead of this single management query is negligible
-// compared to the scenario duration.
+// We try performance_schema.global_status first (structured, server-side
+// filtering), falling back to SHOW GLOBAL STATUS for restricted environments
+// or servers older than 5.7.
 func (t *ConnectionPoolTest) captureMySQLStats(db *sql.DB) mysqlThreadStats {
 	stats := mysqlThreadStats{}
 	ctx := context.Background()
 
+	// ── Step 1: detect threading model ───────────────────────────────────────
+	// @@thread_handling is set by the server at startup based on which plugin
+	// is active. The two values we handle are:
+	//   "one-thread-per-connection" — default community MySQL
+	//   "pool-of-threads"           — Percona Server Thread Pool plugin,
+	//                                  MySQL Enterprise Thread Pool
+	// Any read error (very old server, restricted user) leaves threadHandling
+	// empty, which we treat as one-thread-per-connection for backward compat.
+	db.QueryRowContext(ctx, "SELECT @@thread_handling").Scan(&stats.threadHandling) //nolint
+	usingThreadPool := stats.threadHandling == "pool-of-threads"
+
+	// ── Step 2: collect common status variables ───────────────────────────────
+	// These variables are meaningful in both threading models.
 	rows, err := db.QueryContext(ctx,
 		"SELECT variable_name, variable_value "+
 			"FROM performance_schema.global_status "+
 			"WHERE variable_name IN "+
-			"('Threads_connected','Threads_running','Threads_cached','Threads_created','Connections')")
+			"('Threads_connected','Threads_running','Threads_cached','Threads_created','Connections',"+
+			"'Threadpool_threads','Threadpool_idle_threads','Threadpool_queued_queries')")
 	if err != nil {
-		// Fallback for restricted environments or older MySQL versions.
+		// Fallback: some configurations restrict performance_schema SELECT.
 		rows, err = db.QueryContext(ctx,
 			"SHOW GLOBAL STATUS WHERE Variable_name IN "+
-				"('Threads_connected','Threads_running','Threads_cached','Threads_created','Connections')")
+				"('Threads_connected','Threads_running','Threads_cached','Threads_created','Connections',"+
+				"'Threadpool_threads','Threadpool_idle_threads','Threadpool_queued_queries')")
 		if err != nil {
 			return stats
 		}
@@ -827,40 +872,56 @@ func (t *ConnectionPoolTest) captureMySQLStats(db *sql.DB) mysqlThreadStats {
 			stats.threadsConnected = val
 		case "Threads_running":
 			stats.threadsRunning = val
+		case "Connections":
+			stats.connections = val
+
+		// One-thread-per-connection fields.
+		// In pool-of-threads mode: Threads_cached is always 0 (the pool does not
+		// cache threads between connections — it keeps them alive in the pool
+		// permanently). Threads_created delta is ~0 after server start because
+		// pool worker threads are created at init time, not per-connection.
+		// We collect these anyway but suppress them from the report in pool mode
+		// to avoid the misleading "Threads_cached=0" output.
 		case "Threads_cached":
-			// Threads_cached is the number of OS threads currently sitting in
-			// the thread cache, available for immediate reuse by the next new
-			// connection. When this equals thread_cache_size the cache is full
-			// and every new connection can reuse a thread without OS thread
-			// creation overhead.
 			stats.threadsCached = val
 		case "Threads_created":
-			// Threads_created is monotonically increasing. The delta between
-			// before and after snapshots tells us how many new OS threads the
-			// scenario forced MySQL to spawn. If this delta equals the number of
-			// new connections, the thread cache was useless (every connection
-			// needed a fresh thread). If the delta is 0, every connection was
-			// served from the cache.
 			stats.threadsCreated = val
-		case "Connections":
-			// Connections is the total cumulative connection attempts. Combined
-			// with the Threads_created delta, the cache hit rate is:
-			//   (ΔConnections − ΔThreadsCreated) / ΔConnections × 100
-			stats.connections = val
+
+		// Thread Pool plugin fields (Percona Server / MySQL Enterprise).
+		// These are NULL / missing in one-thread-per-connection mode, which is
+		// fine — the zero values are never displayed in that mode.
+		case "Threadpool_threads":
+			stats.tpThreads = val
+		case "Threadpool_idle_threads":
+			stats.tpIdleThreads = val
+		case "Threadpool_queued_queries":
+			// This is the key contention indicator in thread pool mode.
+			// A non-zero queue means incoming requests had to wait because all
+			// worker threads were busy — the thread pool equivalent of
+			// sql.DB WaitCount on the application side.
+			stats.tpQueuedQueries = val
 		}
 	}
 
-	// Read thread_cache_size separately because it is a system variable, not a
-	// status variable, so it does not appear in SHOW GLOBAL STATUS.
-	db.QueryRowContext(ctx, "SELECT @@thread_cache_size").Scan(&stats.threadCacheSize) //nolint
+	// ── Step 3: collect system variables that need separate queries ───────────
+	if usingThreadPool {
+		// @@threadpool_size is the configured number of worker threads.
+		// Percona Server uses 'threadpool_size'; MySQL Enterprise uses the same.
+		// If the variable is absent (e.g. plugin not fully initialised), the
+		// zero value is safe — we will just omit the "size" from the display.
+		db.QueryRowContext(ctx, "SELECT @@threadpool_size").Scan(&stats.tpSize) //nolint
+	} else {
+		// @@thread_cache_size is a system variable, not a status variable,
+		// so it does not appear in SHOW GLOBAL STATUS.
+		db.QueryRowContext(ctx, "SELECT @@thread_cache_size").Scan(&stats.threadCacheSize) //nolint
+	}
 
-	// Query the performance_schema wait instrumentation for the socket accept
-	// event. This gives us the server's own measurement of how long it spent
-	// accepting new TCP connections — useful for comparing against the client-side
-	// acquireNs, which includes network RTT, MySQL auth, and session variable setup
-	// in addition to the socket accept.
+	// ── Step 4: performance_schema socket accept latency ─────────────────────
+	// The 'wait/io/socket/sql/client_connection' event measures how long the
+	// server spent accepting new TCP connections at the socket layer.  This is
+	// independent of the threading model and valid in both modes.
 	//
-	// Important: performance_schema timer values are in picoseconds (10^-12 s).
+	// Performance_schema timer values are in picoseconds (10^-12 s).
 	// We divide by 1000 to convert to nanoseconds before storing.
 	var sumPs, avgPs, maxPs int64
 	if err := db.QueryRowContext(ctx,
@@ -974,14 +1035,26 @@ func (t *ConnectionPoolTest) printScenarioReport(
 	rdKBs := float64(totalBytesR) / sec / 1024
 	wrKBs := float64(totalBytesW) / sec / 1024
 
-	// Thread-cache hit rate = (new connections − new threads) / new connections.
-	// A rate of 100% means every new connection reused a cached OS thread.
-	// A rate below 80% is a warning sign that thread_cache_size is too small
-	// for the current concurrency level.
+	// Determine the threading model from the before-snapshot.
+	// We use the before value because it reflects the server state at the
+	// start of the scenario; the after value should be identical (thread_handling
+	// cannot change at runtime), but using before is safer.
+	usingThreadPool := mysqlBefore.threadHandling == "pool-of-threads"
+
+	// Thread-cache hit rate — only meaningful in one-thread-per-connection mode.
+	//
+	// Formula: (ΔConnections − ΔThreads_created) / ΔConnections × 100
+	//   100% = every new connection reused a cached OS thread (ideal)
+	//   <80% = thread_cache_size is too small for the concurrency level
+	//
+	// In pool-of-threads mode this formula always returns ~100% because
+	// ΔThreads_created ≈ 0 (pool workers are created at startup, not per-connection).
+	// That "100%" is NOT a cache hit — it is a meaningless artefact of the model.
+	// We skip the calculation entirely in pool mode to avoid displaying it.
 	deltaConns := mysqlAfter.connections - mysqlBefore.connections
 	deltaCreated := mysqlAfter.threadsCreated - mysqlBefore.threadsCreated
 	var cacheHitPct float64
-	if deltaConns > 0 {
+	if !usingThreadPool && deltaConns > 0 {
 		cacheHitPct = float64(deltaConns-deltaCreated) / float64(deltaConns) * 100
 		if cacheHitPct < 0 {
 			cacheHitPct = 0 // clamp: can happen on integer wrap-around in very long runs
@@ -1006,6 +1079,11 @@ func (t *ConnectionPoolTest) printScenarioReport(
 	if t.ReportCSV {
 		// CSV output: "summary," prefix distinguishes these rows from "interval,"
 		// rows so both can coexist in a single redirect file and be split by grep.
+		//
+		// cache_hit_pct is always 0.0 in pool-of-threads mode; consumers should
+		// check thread_handling to decide whether to interpret that column.
+		// tp_queued_delta and tp_threads are 0 in one-thread-per-connection mode.
+		deltaQueued := mysqlAfter.tpQueuedQueries - mysqlBefore.tpQueuedQueries
 		fmt.Printf("summary,%d,%d,%d,%s,%d,%d,%.3f,"+
 			"%d,%d,"+
 			"%d,%d,%.2f,%.2f,%.2f,%.2f,"+
@@ -1014,8 +1092,9 @@ func (t *ConnectionPoolTest) printScenarioReport(
 			"%d,%d,%d,%d,%d,"+
 			"%d,%d,%d,%d,%d,"+
 			"%d,%d,%d,%d,%.1f,"+
-			"%d,%d,%d,"+
-			"%d,%d,%d,%d,%.1f,%d\n",
+			"%s,%d,%d,%d,"+
+			"%d,%d,%d,%d,%.1f,"+
+			"%d,%d,%d\n",
 			workers, t.Loops, t.Duration, t.PayloadSize, t.WriteSize, t.ConnReuse, sec,
 			t.MaxOpenConns, t.MaxIdleConns,
 			n, errCount, tps, qps, rdKBs, wrKBs,
@@ -1030,10 +1109,13 @@ func (t *ConnectionPoolTest) printScenarioReport(
 			// app pool snapshot
 			appAfter.openConnections, appAfter.inUse, appAfter.idle,
 			deltaWaitCount, float64(deltaWaitDur.Milliseconds()),
-			// mysql thread cache before/after
-			mysqlBefore.threadsConnected, mysqlBefore.threadsCached, mysqlBefore.threadsCreated,
-			mysqlAfter.threadsConnected, mysqlAfter.threadsCached, mysqlAfter.threadsCreated,
-			deltaCreated, cacheHitPct, psAvgConnNs,
+			// threading model and server-side concurrency metrics
+			mysqlBefore.threadHandling,
+			mysqlBefore.threadsConnected, mysqlBefore.threadsCreated, mysqlAfter.threadsConnected,
+			// thread cache (one-thread-per-connection) or thread pool, mutually exclusive
+			mysqlBefore.threadsCached, mysqlAfter.threadsCached, deltaCreated, mysqlBefore.threadCacheSize, cacheHitPct,
+			// thread pool queue (zero in one-thread-per-connection mode)
+			mysqlBefore.tpQueuedQueries, mysqlAfter.tpQueuedQueries, deltaQueued,
 		)
 		return
 	}
@@ -1100,32 +1182,74 @@ func (t *ConnectionPoolTest) printScenarioReport(
 		appAfter.maxIdleClosed-appBefore.maxIdleClosed,
 		appAfter.maxLifeClosed-appBefore.maxLifeClosed)
 
-	// ── MySQL server section ──────────────────────────────────────────────────
+	// ── MySQL server section — branches on threading model ───────────────────
 	fmt.Println(sep)
-	fmt.Printf("  MySQL (thread_cache_size=%d):\n", mysqlBefore.threadCacheSize)
-	fmt.Printf("    Before: conn=%-5d running=%-4d cached=%-4d created=%d\n",
-		mysqlBefore.threadsConnected, mysqlBefore.threadsRunning,
-		mysqlBefore.threadsCached, mysqlBefore.threadsCreated)
-	fmt.Printf("    After:  conn=%-5d running=%-4d cached=%-4d created=%d\n",
-		mysqlAfter.threadsConnected, mysqlAfter.threadsRunning,
-		mysqlAfter.threadsCached, mysqlAfter.threadsCreated)
-	fmt.Printf("    New MySQL connections: %-6d  New threads spawned: %-4d  Cache hit: %.1f%%\n",
-		deltaConns, deltaCreated, cacheHitPct)
 
-	// performance_schema socket accept latency is only printed when the server
-	// has at least one new accept event in this scenario (psDeltaCount > 0),
-	// i.e. the scenario created at least one new TCP connection to MySQL.
-	// If MaxIdleConns is large enough that all workers reused idle connections,
-	// this section will be blank — which itself is informative.
-	if psDeltaCount > 0 {
-		fmt.Printf("    PS socket events: %-6d  Avg server-side accept latency: %dµs\n",
-			psDeltaCount, psAvgConnNs/1000)
-	}
-	if deltaCreated > 0 && mysqlBefore.threadCacheSize > 0 {
-		used := mysqlAfter.threadsCached
-		pctFull := float64(used) / float64(mysqlBefore.threadCacheSize) * 100
-		fmt.Printf("    Thread cache: %d/%d used (%.0f%%)\n",
-			used, mysqlBefore.threadCacheSize, pctFull)
+	if usingThreadPool {
+		// Thread Pool plugin mode.
+		// The relevant metrics are pool size, active workers, idle workers, and
+		// queue depth. The thread cache variables are irrelevant and deliberately
+		// omitted to avoid confusion.
+		//
+		// tpQueuedQueries delta is the key indicator: if it rose during the
+		// scenario, incoming requests had to wait for a free worker thread —
+		// the server-side equivalent of the app pool's WaitCount.
+		deltaQueued := mysqlAfter.tpQueuedQueries - mysqlBefore.tpQueuedQueries
+		fmt.Printf("  MySQL Thread Pool (pool_size=%d, thread_handling=%s):\n",
+			mysqlBefore.tpSize, mysqlBefore.threadHandling)
+		fmt.Printf("    Before: conn=%-5d running=%-4d pool_threads=%-4d pool_idle=%-4d queued=%d\n",
+			mysqlBefore.threadsConnected, mysqlBefore.threadsRunning,
+			mysqlBefore.tpThreads, mysqlBefore.tpIdleThreads, mysqlBefore.tpQueuedQueries)
+		fmt.Printf("    After:  conn=%-5d running=%-4d pool_threads=%-4d pool_idle=%-4d queued=%d\n",
+			mysqlAfter.threadsConnected, mysqlAfter.threadsRunning,
+			mysqlAfter.tpThreads, mysqlAfter.tpIdleThreads, mysqlAfter.tpQueuedQueries)
+		fmt.Printf("    New MySQL connections: %-6d  Queue depth increase: %d\n",
+			deltaConns, deltaQueued)
+
+		if psDeltaCount > 0 {
+			fmt.Printf("    PS socket events: %-6d  Avg server-side accept latency: %dµs\n",
+				psDeltaCount, psAvgConnNs/1000)
+		}
+
+		// Warn if the thread pool queue grew during the scenario — this means
+		// requests were rejected from immediate execution and had to wait.
+		// Unlike the app-side WaitCount (which is always recoverable), a
+		// growing server-side queue can eventually cause client errors if
+		// threadpool_max_transactions_limit is exceeded.
+		if deltaQueued > 0 {
+			fmt.Printf("\n  [!] Server thread pool queue grew by %d during the scenario.\n", deltaQueued)
+			fmt.Printf("      Worker threads may be saturated. Consider increasing threadpool_size (currently %d).\n",
+				mysqlBefore.tpSize)
+		}
+	} else {
+		// One-thread-per-connection mode.
+		// The thread cache hit rate is the primary server-side health indicator.
+		fmt.Printf("  MySQL (thread_cache_size=%d, thread_handling=%s):\n",
+			mysqlBefore.threadCacheSize, mysqlBefore.threadHandling)
+		fmt.Printf("    Before: conn=%-5d running=%-4d cached=%-4d created=%d\n",
+			mysqlBefore.threadsConnected, mysqlBefore.threadsRunning,
+			mysqlBefore.threadsCached, mysqlBefore.threadsCreated)
+		fmt.Printf("    After:  conn=%-5d running=%-4d cached=%-4d created=%d\n",
+			mysqlAfter.threadsConnected, mysqlAfter.threadsRunning,
+			mysqlAfter.threadsCached, mysqlAfter.threadsCreated)
+		fmt.Printf("    New MySQL connections: %-6d  New threads spawned: %-4d  Cache hit: %.1f%%\n",
+			deltaConns, deltaCreated, cacheHitPct)
+
+		// Socket accept latency from performance_schema.
+		// Only printed when new TCP connections were made during the scenario.
+		// If MaxIdleConns was large enough that all workers reused idle connections,
+		// psDeltaCount will be 0 — which itself is informative (no new OS-level
+		// accept overhead at all).
+		if psDeltaCount > 0 {
+			fmt.Printf("    PS socket events: %-6d  Avg server-side accept latency: %dµs\n",
+				psDeltaCount, psAvgConnNs/1000)
+		}
+		if deltaCreated > 0 && mysqlBefore.threadCacheSize > 0 {
+			used := mysqlAfter.threadsCached
+			pctFull := float64(used) / float64(mysqlBefore.threadCacheSize) * 100
+			fmt.Printf("    Thread cache: %d/%d used (%.0f%%)\n",
+				used, mysqlBefore.threadCacheSize, pctFull)
+		}
 	}
 
 	// ── Actionable warnings ───────────────────────────────────────────────────
@@ -1135,7 +1259,8 @@ func (t *ConnectionPoolTest) printScenarioReport(
 		fmt.Printf("      Increase --maxOpenConns (currently %d) or reduce --workers (%d).\n",
 			t.MaxOpenConns, workers)
 	}
-	if cacheHitPct < 80 && deltaCreated > 0 {
+	// Only warn about thread cache in the model where thread_cache_size matters.
+	if !usingThreadPool && cacheHitPct < 80 && deltaCreated > 0 {
 		fmt.Printf("  [!] Low MySQL thread cache hit rate (%.1f%%).\n", cacheHitPct)
 		fmt.Printf("      Increase thread_cache_size (currently %d) on the server.\n",
 			mysqlBefore.threadCacheSize)
@@ -1270,8 +1395,13 @@ func (t *ConnectionPoolTest) printHeader(db *sql.DB) {
 		t.WarmupLoops, t.ReportInterval)
 
 	ms := t.captureMySQLStats(db)
-	fmt.Printf("  MySQL:      thread_cache_size=%d  cached=%d  created=%d\n",
-		ms.threadCacheSize, ms.threadsCached, ms.threadsCreated)
+	if ms.threadHandling == "pool-of-threads" {
+		fmt.Printf("  MySQL:      thread_handling=pool-of-threads  pool_size=%d  pool_threads=%d  pool_idle=%d  queued=%d\n",
+			ms.tpSize, ms.tpThreads, ms.tpIdleThreads, ms.tpQueuedQueries)
+	} else {
+		fmt.Printf("  MySQL:      thread_handling=%s  thread_cache_size=%d  cached=%d  created=%d\n",
+			ms.threadHandling, ms.threadCacheSize, ms.threadsCached, ms.threadsCreated)
+	}
 	fmt.Println(bar)
 }
 
@@ -1283,6 +1413,9 @@ func (t *ConnectionPoolTest) printCSVHeaders() {
 	if t.ReportInterval > 0 {
 		fmt.Println("# interval,t_sec,ops,errors,tps,acq_avg_us,rel_avg_us,rd_avg_us,wr_avg_us,rd_kb_s,wr_kb_s")
 	}
+	// thread_handling identifies which model is active. Columns that follow it:
+	//   cache_hit_pct    — meaningful only when thread_handling=one-thread-per-connection; 0.0 otherwise
+	//   tp_queued_*      — meaningful only when thread_handling=pool-of-threads; 0 otherwise
 	fmt.Println("# summary,workers,loops,duration_s,read_size,write_bytes,conn_reuse,elapsed_s," +
 		"max_open,max_idle," +
 		"ops,errors,tps,qps,rd_kb_s,wr_kb_s," +
@@ -1291,9 +1424,9 @@ func (t *ConnectionPoolTest) printCSVHeaders() {
 		"rd_avg_ns,rd_p50_ns,rd_p95_ns,rd_p99_ns,rd_max_ns," +
 		"wr_avg_ns,wr_p50_ns,wr_p95_ns,wr_p99_ns,wr_max_ns," +
 		"pool_open,pool_in_use,pool_idle,pool_wait_count,pool_wait_ms," +
-		"mysql_conn_before,mysql_cached_before,mysql_created_before," +
-		"mysql_conn_after,mysql_cached_after,mysql_created_after," +
-		"mysql_new_threads,cache_hit_pct,ps_conn_avg_ns")
+		"thread_handling,mysql_conn_before,mysql_created_before,mysql_conn_after," +
+		"mysql_cached_before,mysql_cached_after,mysql_new_threads,thread_cache_size,cache_hit_pct," +
+		"tp_queued_before,tp_queued_after,tp_queued_delta")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
