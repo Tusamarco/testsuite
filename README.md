@@ -81,6 +81,7 @@ Finally, two ASCII histograms show the **distribution** of Acquire and Release l
 | `--warmupLoops` | `5` | Sequential pre-measurement cycles to prime the pool and MySQL thread cache before timing starts. |
 | `--reportInterval` | `5` | Sysbench-style live stats interval in seconds. `0` = disable. When active, shows per-interval ops, TPS, and average latency while the test runs. Replaces the progress bar. |
 | `--reportCSV` | `false` | Machine-readable output. Interval lines are prefixed `interval,`; summary lines are prefixed `summary,`. Both can coexist in one redirected file and be split by `grep`. |
+| `--histogram` | `false` | Print acquire and release latency histograms after each scenario. In human-readable mode they are always shown; this flag forces them to appear even when `--reportCSV` is active. Histograms are printed to stdout immediately after the `summary,` line so `grep '^summary,'` still isolates clean CSV rows. |
 | `--sleep` | `0` | Milliseconds each worker sleeps between operations. Simulates think-time / pacing and reduces QPS to a controlled rate. |
 
 ---
@@ -510,31 +511,128 @@ grep '^summary,' b.csv | awk -F, '{
 
 ### CSV format reference
 
-All values in the `summary,` row are in nanoseconds except where noted.
+Two row types share stdout. Separate them with `grep`:
 
-```
-summary,
-  workers, loops, duration_s, read_size, write_bytes, conn_reuse, elapsed_s,
-  max_open, max_idle,
-  ops, errors, tps, qps, rd_kb_s, wr_kb_s,
-  acq_avg_ns, acq_p50_ns, acq_p95_ns, acq_p99_ns, acq_max_ns,
-  rel_avg_ns, rel_p50_ns, rel_p95_ns, rel_p99_ns, rel_max_ns,
-  rd_avg_ns,  rd_p50_ns,  rd_p95_ns,  rd_p99_ns,  rd_max_ns,
-  wr_avg_ns,  wr_p50_ns,  wr_p95_ns,  wr_p99_ns,  wr_max_ns,
-  pool_open, pool_in_use, pool_idle, pool_wait_count, pool_wait_ms,
-  mysql_conn_before, mysql_cached_before, mysql_created_before,
-  mysql_conn_after,  mysql_cached_after,  mysql_created_after,
-  mysql_new_threads, cache_hit_pct, ps_conn_avg_ns
+```bash
+grep '^interval,' results.csv   # live per-interval rows
+grep '^summary,'  results.csv   # one aggregate row per scenario
 ```
 
-`interval,` rows (emitted every `--reportInterval` seconds):
+#### `interval,` row — emitted every `--reportInterval` seconds
 
-```
-interval,
-  t_sec, ops, errors, tps,
-  acq_avg_us, rel_avg_us, rd_avg_us, wr_avg_us,
-  rd_kb_s, wr_kb_s
-```
+Each row covers only the operations that completed within that interval (counters are reset on every tick — no cumulative averaging).
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `interval` | — | Row-type tag. Use to split from `summary,` rows. |
+| `t_sec` | seconds | Elapsed time at the end of this interval since the scenario started. |
+| `workers` | count | Number of concurrent goroutines for this scenario. Useful when `--rampWorkers` produces multiple scenarios in one file — each interval line carries its own worker count. |
+| `ops` | count | Operations completed in this interval. An operation is one full acquire → read (→ write) → release cycle, repeated `--connReuse` times per acquired connection. |
+| `errors` | count | Operations that returned an error in this interval. |
+| `tps` | ops/s | Throughput: `ops / interval_duration`. |
+| `acq_avg_us` | µs | Average time to acquire a connection from the Go pool (`db.Conn()`) during this interval. High values mean the pool is exhausted and goroutines are queuing; compare with `pool_wait_count` in the summary. |
+| `rel_avg_us` | µs | Average time to release the connection back to the pool (`conn.Close()`). Normally sub-millisecond; spikes indicate pool-side cleanup pressure. |
+| `rd_avg_us` | µs | Average server round-trip for the read query during this interval. Covers network RTT + query execution + result transfer. |
+| `wr_avg_us` | µs | Average server round-trip for the write query (`0` when `--writeSize 0`). |
+| `rd_kb_s` | KB/s | Read throughput: bytes returned by read queries, divided by interval duration. |
+| `wr_kb_s` | KB/s | Write throughput: bytes sent to the server in write payloads, divided by interval duration. |
+
+#### `summary,` row — one row per scenario, printed after all workers finish
+
+All latency values are in **nanoseconds** unless the column name ends in `_ms`, `_us`, `_kb_s`, or `_pct`.
+
+**Scenario configuration**
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `summary` | — | Row-type tag. |
+| `workers` | count | Concurrent goroutines used for this scenario. |
+| `loops` | count | Loop count (`--loops`). `0` when `--duration` was used. |
+| `duration_s` | seconds | Time limit (`--duration`). `0` when `--loops` was used. |
+| `read_size` | label | Read payload size label: `small`, `medium`, `large`, or `xlarge`. |
+| `write_bytes` | bytes | Write payload size (`--writeSize`). `0` = read-only run. |
+| `conn_reuse` | count | SQL executions per acquired connection before release (`--connReuse`). |
+| `elapsed_s` | seconds | Actual wall-clock duration of the scenario. |
+| `max_open` | count | `--maxOpenConns` value used (Go pool ceiling). |
+| `max_idle` | count | `--maxIdleConns` value used (Go pool idle floor). |
+
+**Throughput**
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `ops` | count | Total operations completed across all workers. |
+| `errors` | count | Total operations that returned an error. |
+| `tps` | ops/s | Overall throughput: `ops / elapsed_s`. |
+| `qps` | queries/s | SQL statements issued per second: `ops × conn_reuse × (1 + write_flag) / elapsed_s`. |
+| `rd_kb_s` | KB/s | Average read throughput over the full scenario. |
+| `wr_kb_s` | KB/s | Average write throughput over the full scenario. |
+
+**Connection acquire latency** (time from `db.Conn()` call until a connection is returned)
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `acq_avg_ns` | ns | Mean acquire latency. When the pool is under-sized relative to workers this includes queue wait time — a key indicator of pool exhaustion. |
+| `acq_p50_ns` | ns | Median acquire latency. |
+| `acq_p95_ns` | ns | 95th-percentile acquire latency. A large gap between p50 and p95 indicates bursty pool contention. |
+| `acq_p99_ns` | ns | 99th-percentile acquire latency. |
+| `acq_max_ns` | ns | Worst single acquire observed. |
+
+**Connection release latency** (time for `conn.Close()` to return the connection to the pool)
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `rel_avg_ns` | ns | Mean release latency. |
+| `rel_p50_ns` | ns | Median. |
+| `rel_p95_ns` | ns | 95th percentile. |
+| `rel_p99_ns` | ns | 99th percentile. |
+| `rel_max_ns` | ns | Worst single release. |
+
+**Read query latency** (server round-trip for the SELECT)
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `rd_avg_ns` | ns | Mean read round-trip. |
+| `rd_p50_ns` | ns | Median. |
+| `rd_p95_ns` | ns | 95th percentile. |
+| `rd_p99_ns` | ns | 99th percentile. |
+| `rd_max_ns` | ns | Worst single read. |
+
+**Write query latency** (server round-trip for the UPDATE; all zeros when `--writeSize 0`)
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `wr_avg_ns` | ns | Mean write round-trip. |
+| `wr_p50_ns` | ns | Median. |
+| `wr_p95_ns` | ns | 95th percentile. |
+| `wr_p99_ns` | ns | 99th percentile. |
+| `wr_max_ns` | ns | Worst single write. |
+
+**Go connection pool state** (snapshot at end of scenario)
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `pool_open` | count | `sql.DBStats.OpenConnections` — total open connections (in-use + idle) at scenario end. |
+| `pool_in_use` | count | `sql.DBStats.InUse` — connections actively held by a goroutine at snapshot time. |
+| `pool_idle` | count | `sql.DBStats.Idle` — connections sitting in the pool ready for reuse. |
+| `pool_wait_count` | count | Delta of `sql.DBStats.WaitCount`: goroutines that had to block waiting for a free slot during this scenario. Non-zero means `--maxOpenConns` was a bottleneck. |
+| `pool_wait_ms` | ms | Total wall-clock time those goroutines spent waiting. Divide by `pool_wait_count` for mean wait per blocked op. |
+
+**MySQL server metrics — thread model and connection counters**
+
+These columns cover both threading models. Check `thread_handling` to know which set is active.
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `thread_handling` | label | `one-thread-per-connection` (community MySQL default) or `pool-of-threads` (Percona/Enterprise Thread Pool plugin). Determines which of the following columns carry meaningful values. |
+| `mysql_conn_before` | count | `Threads_connected` at scenario start — active sessions on the server before the test. |
+| `mysql_cached_before` | count | `Threads_cached` before (`one-thread-per-connection` only). Threads parked in the server cache, available for immediate reuse without OS thread creation. |
+| `mysql_created_before` | count | `Threads_created` before — cumulative OS threads spawned since server start. |
+| `mysql_conn_after` | count | `Threads_connected` at scenario end. |
+| `mysql_cached_after` | count | `Threads_cached` after. A rising value means the cache absorbed thread teardowns; a value near `thread_cache_size` means the cache is full. |
+| `mysql_created_after` | count | `Threads_created` after. |
+| `mysql_new_threads` | count | Delta `Threads_created` (`after − before`). Non-zero means the cache could not supply all threads and the OS had to create new ones — a sign the cache is too small or connections exceeded `thread_cache_size`. |
+| `cache_hit_pct` | % | `(ΔConnections − ΔThreads_created) / ΔConnections × 100`. 100 % = every new connection reused a cached thread. Below 80 % = the cache is undersized for this concurrency level. Always `0.0` in `pool-of-threads` mode (the concept does not apply). |
+| `ps_conn_avg_ns` | ns | Average server-side socket accept latency from `performance_schema.events_waits_summary_global_by_event_name` (`wait/io/socket/sql/client_connection`). Measures the TCP accept cost on the server; complements `acq_avg_ns` which includes network RTT, authentication, and session setup on top. `0` when performance_schema is disabled or the event is not instrumented. |
 
 ---
 

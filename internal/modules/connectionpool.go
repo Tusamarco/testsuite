@@ -108,6 +108,10 @@ type ConnectionPoolTest struct {
 	// similar to sysbench's output. Set to 0 to disable interval output;
 	// the progress bar is shown instead (in loop-based mode).
 	ReportInterval int
+	// Histogram, when true, prints the acquire and release latency histograms
+	// after each scenario even in CSV mode (they are printed to stdout after
+	// the summary, line so they do not interfere with CSV parsing).
+	Histogram bool
 }
 
 // cpResult holds all timing measurements for one complete
@@ -229,6 +233,7 @@ func NewConnectionPoolTest(params config.Params) *ConnectionPoolTest {
 		WarmupLoops:        params.WarmupLoops,
 		Duration:           params.Duration,
 		ReportInterval:     params.ReportInterval,
+		Histogram:          params.Histogram,
 	}
 }
 
@@ -613,9 +618,7 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int, scratchTable s
 	appAfter := snapshotAppPool(db)
 
 	t.printScenarioReport(workers, allResults, elapsed, mysqlBefore, mysqlAfter, appBefore, appAfter)
-	// Histograms are only meaningful in human-readable mode; CSV consumers
-	// should derive distributions from the raw per-operation data if needed.
-	if !t.ReportCSV {
+	if !t.ReportCSV || t.Histogram {
 		t.printHistograms(allResults)
 	}
 }

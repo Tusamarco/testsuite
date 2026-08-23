@@ -62,6 +62,7 @@ func main() {
 	flag.IntVar(&params.WarmupLoops, "warmupLoops", params.WarmupLoops, "Warmup iterations before measurement")
 	flag.IntVar(&params.Duration, "duration", params.Duration, "Test duration in seconds (0=use --loops)")
 	flag.IntVar(&params.ReportInterval, "reportInterval", params.ReportInterval, "Sysbench-style per-interval stats period in seconds (0=off)")
+	flag.BoolVar(&params.Histogram, "histogram", params.Histogram, "Print acquire/release latency histograms after each scenario (printed even in --reportCSV mode, after the summary, line)")
 
 	// DataGenTest flags
 	flag.IntVar(&params.BatchSize, "batchSize", params.BatchSize, "Rows per INSERT statement (datagen)")

@@ -39,6 +39,7 @@ type Params struct {
 	WarmupLoops        int    // Warmup iterations before measurement
 	Duration           int    // Test run duration in seconds (0 = use Loops)
 	ReportInterval     int    // Sysbench-style per-interval stats period in seconds (0 = off)
+	Histogram          bool   // Print acquire/release latency histograms even in CSV mode
 
 	// --- DataGenTest settings ---
 	BatchSize int  // Number of rows per INSERT batch
