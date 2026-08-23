@@ -749,8 +749,8 @@ func (t *ConnectionPoolTest) startIntervalReporter(
 
 		// Print the column header once before the first data line.
 		if !t.ReportCSV {
-			fmt.Printf("\n  %-6s %-8s %-7s %-10s %-11s %-11s %-11s %-11s %-10s %-10s\n",
-				"t(s)", "ops", "errors", "tps",
+			fmt.Printf("\n  %-6s %-6s %-8s %-7s %-10s %-11s %-11s %-11s %-11s %-10s %-10s\n",
+				"t(s)", "wrks", "ops", "errors", "tps",
 				"acq_avg_µs", "rel_avg_µs", "rd_avg_µs", "wr_avg_µs",
 				"rd_KB/s", "wr_KB/s")
 		}
@@ -793,13 +793,13 @@ func (t *ConnectionPoolTest) startIntervalReporter(
 				// In CSV mode prefix with "interval," so that a grep or awk
 				// script can split interval lines from summary lines.
 				if t.ReportCSV {
-					fmt.Printf("interval,%d,%d,%d,%.2f,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f\n",
-						elapsed, ops, errs, tps,
+					fmt.Printf("interval,%d,%d,%d,%d,%.2f,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f\n",
+						elapsed, workers, ops, errs, tps,
 						acqAvg, relAvg, rdAvg, wrAvg,
 						rdKBs, wrKBs)
 				} else {
-					fmt.Printf("  %-6d %-8d %-7d %-10.1f %-11.1f %-11.1f %-11.1f %-11.1f %-10.2f %-10.2f\n",
-						elapsed, ops, errs, tps,
+					fmt.Printf("  %-6d %-6d %-8d %-7d %-10.1f %-11.1f %-11.1f %-11.1f %-11.1f %-10.2f %-10.2f\n",
+						elapsed, workers, ops, errs, tps,
 						acqAvg, relAvg, rdAvg, wrAvg,
 						rdKBs, wrKBs)
 				}
@@ -1461,7 +1461,7 @@ func (t *ConnectionPoolTest) printHeader(db *sql.DB) {
 // (pandas, awk, etc.) while remaining readable for humans.
 func (t *ConnectionPoolTest) printCSVHeaders() {
 	if t.ReportInterval > 0 {
-		fmt.Println("# interval,t_sec,ops,errors,tps,acq_avg_us,rel_avg_us,rd_avg_us,wr_avg_us,rd_kb_s,wr_kb_s")
+		fmt.Println("# interval,t_sec,workers,ops,errors,tps,acq_avg_us,rel_avg_us,rd_avg_us,wr_avg_us,rd_kb_s,wr_kb_s")
 	}
 	// thread_handling identifies which model is active. Columns that follow it:
 	//   cache_hit_pct    — meaningful only when thread_handling=one-thread-per-connection; 0.0 otherwise
