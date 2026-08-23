@@ -823,9 +823,20 @@ func (t *ConnectionPoolTest) startIntervalReporter(
 // displays misleading values (e.g. a thread-cache hit rate of "100%" when
 // the thread cache is completely bypassed by the pool plugin).
 //
-// We try performance_schema.global_status first (structured, server-side
-// filtering), falling back to SHOW GLOBAL STATUS for restricted environments
-// or servers older than 5.7.
+// Query priority:
+//   1. SHOW GLOBAL STATUS — primary path. Available on every MySQL/Percona/
+//      MariaDB version regardless of performance_schema configuration. Returns
+//      variable names in a consistent mixed-case format. Does not require any
+//      privilege beyond the connection itself.
+//   2. performance_schema.global_status — fallback if SHOW fails. Note that
+//      PS returns variable names in lowercase on MySQL 5.7+ and MySQL 8.0,
+//      so the switch uses strings.ToLower to normalise before comparing.
+//
+// Using SHOW as the primary path (rather than PS) avoids an observed bug
+// where the PS query succeeds but returns lowercase names that do not match
+// the switch cases, causing all fields to silently remain at zero. That
+// asymmetry was intermittent because which query path was taken depended on
+// transient connection state after a heavy load scenario, not on privileges.
 func (t *ConnectionPoolTest) captureMySQLStats(db *sql.DB) mysqlThreadStats {
 	stats := mysqlThreadStats{}
 	ctx := context.Background()
@@ -837,89 +848,99 @@ func (t *ConnectionPoolTest) captureMySQLStats(db *sql.DB) mysqlThreadStats {
 	//   "pool-of-threads"           — Percona Server Thread Pool plugin,
 	//                                  MySQL Enterprise Thread Pool
 	// Any read error (very old server, restricted user) leaves threadHandling
-	// empty, which we treat as one-thread-per-connection for backward compat.
+	// as empty string, which we treat as one-thread-per-connection.
 	db.QueryRowContext(ctx, "SELECT @@thread_handling").Scan(&stats.threadHandling) //nolint
 	usingThreadPool := stats.threadHandling == "pool-of-threads"
 
-	// ── Step 2: collect common status variables ───────────────────────────────
-	// These variables are meaningful in both threading models.
-	rows, err := db.QueryContext(ctx,
-		"SELECT variable_name, variable_value "+
-			"FROM performance_schema.global_status "+
-			"WHERE variable_name IN "+
-			"('Threads_connected','Threads_running','Threads_cached','Threads_created','Connections',"+
-			"'Threadpool_threads','Threadpool_idle_threads','Threadpool_queued_queries')")
+	// ── Step 2: collect thread / connection status variables ─────────────────
+	// PRIMARY: SHOW GLOBAL STATUS. This is available on all supported versions
+	// and returns variable names in a consistent mixed-case format.
+	// FALLBACK: performance_schema.global_status. Returns lowercase names on
+	// MySQL 5.7+ / 8.0, so we normalise with strings.ToLower before matching.
+	//
+	// Thread pool variables (Threadpool_*) are queried here too; they simply
+	// produce no rows on servers without the plugin, which is harmless.
+	scanStatusRows := func(rows *sql.Rows) {
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			var val int64
+			if err := rows.Scan(&name, &val); err != nil {
+				continue
+			}
+			// Normalise to lowercase so the switch works regardless of whether
+			// the server returned "Threads_connected" or "threads_connected".
+			switch strings.ToLower(name) {
+			case "threads_connected":
+				stats.threadsConnected = val
+			case "threads_running":
+				stats.threadsRunning = val
+			case "connections":
+				// Cumulative, monotonically increasing. Never decrements.
+				// The before→after delta is the number of new connections the
+				// scenario created, used to compute the cache hit rate.
+				stats.connections = val
+
+			// One-thread-per-connection only.
+			// In pool mode: Threads_cached is always 0 (no cache exists) and
+			// Threads_created barely changes (pool workers were created at init).
+			// We still collect them but suppress them from the report in pool mode.
+			case "threads_cached":
+				stats.threadsCached = val
+			case "threads_created":
+				stats.threadsCreated = val
+
+			// Thread Pool plugin fields (Percona Server / MySQL Enterprise).
+			// Zero on servers without the plugin — never displayed in that case.
+			case "threadpool_threads":
+				stats.tpThreads = val
+			case "threadpool_idle_threads":
+				stats.tpIdleThreads = val
+			case "threadpool_queued_queries":
+				// Key contention indicator in thread pool mode: non-zero means
+				// incoming requests had to wait for a free worker thread.
+				stats.tpQueuedQueries = val
+			}
+		}
+		if err := rows.Err(); err != nil {
+			log.Warnf("captureMySQLStats: row iteration error: %v", err)
+		}
+	}
+
+	const statusVars = "('Threads_connected','Threads_running','Threads_cached','Threads_created'," +
+		"'Connections','Threadpool_threads','Threadpool_idle_threads','Threadpool_queued_queries')"
+
+	rows, err := db.QueryContext(ctx, "SHOW GLOBAL STATUS WHERE Variable_name IN "+statusVars)
 	if err != nil {
-		// Fallback: some configurations restrict performance_schema SELECT.
+		// Fallback to performance_schema. Names come back lowercase on 5.7+/8.0;
+		// the switch inside scanStatusRows handles that via strings.ToLower.
 		rows, err = db.QueryContext(ctx,
-			"SHOW GLOBAL STATUS WHERE Variable_name IN "+
-				"('Threads_connected','Threads_running','Threads_cached','Threads_created','Connections',"+
-				"'Threadpool_threads','Threadpool_idle_threads','Threadpool_queued_queries')")
+			"SELECT variable_name, variable_value "+
+				"FROM performance_schema.global_status "+
+				"WHERE variable_name IN "+statusVars)
 		if err != nil {
+			// Both paths failed — return zero struct. The caller will produce
+			// zero deltas and skip any computed metrics that require valid data.
+			log.Warnf("captureMySQLStats: cannot read server status: %v", err)
 			return stats
 		}
 	}
-	defer rows.Close()
+	scanStatusRows(rows)
 
-	for rows.Next() {
-		var name string
-		var val int64
-		if err := rows.Scan(&name, &val); err != nil {
-			continue
-		}
-		switch name {
-		case "Threads_connected":
-			stats.threadsConnected = val
-		case "Threads_running":
-			stats.threadsRunning = val
-		case "Connections":
-			stats.connections = val
-
-		// One-thread-per-connection fields.
-		// In pool-of-threads mode: Threads_cached is always 0 (the pool does not
-		// cache threads between connections — it keeps them alive in the pool
-		// permanently). Threads_created delta is ~0 after server start because
-		// pool worker threads are created at init time, not per-connection.
-		// We collect these anyway but suppress them from the report in pool mode
-		// to avoid the misleading "Threads_cached=0" output.
-		case "Threads_cached":
-			stats.threadsCached = val
-		case "Threads_created":
-			stats.threadsCreated = val
-
-		// Thread Pool plugin fields (Percona Server / MySQL Enterprise).
-		// These are NULL / missing in one-thread-per-connection mode, which is
-		// fine — the zero values are never displayed in that mode.
-		case "Threadpool_threads":
-			stats.tpThreads = val
-		case "Threadpool_idle_threads":
-			stats.tpIdleThreads = val
-		case "Threadpool_queued_queries":
-			// This is the key contention indicator in thread pool mode.
-			// A non-zero queue means incoming requests had to wait because all
-			// worker threads were busy — the thread pool equivalent of
-			// sql.DB WaitCount on the application side.
-			stats.tpQueuedQueries = val
-		}
-	}
-
-	// ── Step 3: collect system variables that need separate queries ───────────
+	// ── Step 3: system variables (not in SHOW GLOBAL STATUS) ─────────────────
 	if usingThreadPool {
-		// @@threadpool_size is the configured number of worker threads.
-		// Percona Server uses 'threadpool_size'; MySQL Enterprise uses the same.
-		// If the variable is absent (e.g. plugin not fully initialised), the
-		// zero value is safe — we will just omit the "size" from the display.
+		// @@threadpool_size: configured maximum number of pool worker threads.
 		db.QueryRowContext(ctx, "SELECT @@threadpool_size").Scan(&stats.tpSize) //nolint
 	} else {
-		// @@thread_cache_size is a system variable, not a status variable,
-		// so it does not appear in SHOW GLOBAL STATUS.
+		// @@thread_cache_size: capacity of the per-connection thread cache.
 		db.QueryRowContext(ctx, "SELECT @@thread_cache_size").Scan(&stats.threadCacheSize) //nolint
 	}
 
 	// ── Step 4: performance_schema socket accept latency ─────────────────────
-	// The 'wait/io/socket/sql/client_connection' event measures how long the
-	// server spent accepting new TCP connections at the socket layer.  This is
-	// independent of the threading model and valid in both modes.
+	// The 'wait/io/socket/sql/client_connection' event records how long the
+	// server spent at the socket layer accepting new TCP connections. This is
+	// independent of the threading model and complements the client-side
+	// acquireNs (which also covers network RTT, auth, and session setup).
 	//
 	// Performance_schema timer values are in picoseconds (10^-12 s).
 	// We divide by 1000 to convert to nanoseconds before storing.
@@ -1051,6 +1072,13 @@ func (t *ConnectionPoolTest) printScenarioReport(
 	// ΔThreads_created ≈ 0 (pool workers are created at startup, not per-connection).
 	// That "100%" is NOT a cache hit — it is a meaningless artefact of the model.
 	// We skip the calculation entirely in pool mode to avoid displaying it.
+	// Detect a failed After snapshot: 'connections' is a cumulative, monotonically
+	// increasing server counter that can never decrease or be zero on a live server.
+	// If mysqlAfter.connections == 0 while mysqlBefore.connections > 0, the After
+	// query failed silently and returned the zero struct. Computing deltas against
+	// a zero struct produces large negative numbers that are meaningless.
+	afterSnapshotFailed := mysqlAfter.connections == 0 && mysqlBefore.connections > 0
+
 	deltaConns := mysqlAfter.connections - mysqlBefore.connections
 	deltaCreated := mysqlAfter.threadsCreated - mysqlBefore.threadsCreated
 	var cacheHitPct float64
@@ -1083,7 +1111,18 @@ func (t *ConnectionPoolTest) printScenarioReport(
 		// cache_hit_pct is always 0.0 in pool-of-threads mode; consumers should
 		// check thread_handling to decide whether to interpret that column.
 		// tp_queued_delta and tp_threads are 0 in one-thread-per-connection mode.
+		// When afterSnapshotFailed, delta columns are emitted as 0 rather than
+		// meaningless negative numbers — the before-snapshot columns still have
+		// real values.
+		if afterSnapshotFailed {
+			deltaConns = 0
+			deltaCreated = 0
+			cacheHitPct = 0
+		}
 		deltaQueued := mysqlAfter.tpQueuedQueries - mysqlBefore.tpQueuedQueries
+		if afterSnapshotFailed {
+			deltaQueued = 0
+		}
 		fmt.Printf("summary,%d,%d,%d,%s,%d,%d,%.3f,"+
 			"%d,%d,"+
 			"%d,%d,%.2f,%.2f,%.2f,%.2f,"+
@@ -1185,7 +1224,18 @@ func (t *ConnectionPoolTest) printScenarioReport(
 	// ── MySQL server section — branches on threading model ───────────────────
 	fmt.Println(sep)
 
-	if usingThreadPool {
+	if afterSnapshotFailed {
+		// The After snapshot returned all zeros — both SHOW GLOBAL STATUS and the
+		// performance_schema fallback failed (captureMySQLStats logged a warning).
+		// Displaying deltas would give large nonsensical negatives, so we skip
+		// the delta section and show only the Before values for reference.
+		fmt.Printf("  MySQL (thread_handling=%s):\n", mysqlBefore.threadHandling)
+		fmt.Printf("    Before: conn=%-5d running=%-4d cached=%-4d created=%d\n",
+			mysqlBefore.threadsConnected, mysqlBefore.threadsRunning,
+			mysqlBefore.threadsCached, mysqlBefore.threadsCreated)
+		fmt.Printf("  [!] MySQL After snapshot failed — delta metrics unavailable.\n")
+		fmt.Printf("      Check server connectivity and performance_schema access.\n")
+	} else if usingThreadPool {
 		// Thread Pool plugin mode.
 		// The relevant metrics are pool size, active workers, idle workers, and
 		// queue depth. The thread cache variables are irrelevant and deliberately
