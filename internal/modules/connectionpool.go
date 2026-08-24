@@ -1331,6 +1331,11 @@ func (t *ConnectionPoolTest) printScenarioReport(
 // latency is unimodal (healthy), bimodal (pool pressure causing two distinct
 // populations: fast reuse vs slow wait), or has a long tail (intermittent slow
 // connections). This is not visible from percentiles alone.
+//
+// In CSV mode (--reportCSV) each histogram is emitted as two rows prefixed
+// with "histogram," — one for acquire, one for release. The rows carry the
+// same scenario context as summary rows and can be extracted with:
+//   grep '^histogram,' results.csv
 func (t *ConnectionPoolTest) printHistograms(workers int, results []cpResult) {
 	acq := make([]int64, 0, len(results))
 	rel := make([]int64, 0, len(results))
@@ -1341,42 +1346,44 @@ func (t *ConnectionPoolTest) printHistograms(workers int, results []cpResult) {
 		}
 	}
 
-	// Build a context string that identifies the scenario so that histograms
-	// remain self-descriptive when exported or grepped from a mixed CSV file.
 	ioMode := "read-only"
 	if t.WriteSize > 0 {
 		ioMode = fmt.Sprintf("read+write(%dB)", t.WriteSize)
 	}
-	ctx := fmt.Sprintf("workers=%d  payload=%s  load=%s", workers, t.PayloadSize, ioMode)
 
-	cpHistogram("Acquire", ctx, acq)
-	cpHistogram("Release", ctx, rel)
+	cpHistogram("Acquire", t.ReportCSV, workers, t.PayloadSize, ioMode, acq)
+	cpHistogram("Release", t.ReportCSV, workers, t.PayloadSize, ioMode, rel)
 }
 
-// cpHistogram prints a horizontal bar chart with fixed logarithmic-ish buckets.
-// The bucket boundaries are chosen to match typical connection latency ranges:
+// cpHistogram prints latency distribution data for a single measurement type
+// (acquire or release). The bucket boundaries match typical connection latency
+// ranges:
 //   - Sub-100µs: pool reuse, no OS thread creation
 //   - 100µs-1ms: pool reuse with some overhead (large pool, GC pause, etc.)
 //   - 1ms-10ms: new TCP connection being served from the thread cache
-//   - 10ms+: new TCP connection requiring a new OS thread, or network issues
+//   - 10ms+:    new TCP connection requiring a new OS thread, or network issues
 //
-// Bar lengths are normalised to the busiest bucket so that the chart fills the
-// terminal width regardless of distribution shape (a single dominant bucket
-// does not squash all other bars to zero).
-func cpHistogram(label, ctx string, ns []int64) {
+// In human-readable mode a normalised ASCII bar chart is printed; bar lengths
+// are scaled to the busiest bucket so minority buckets remain visible.
+//
+// In CSV mode a single "histogram," row is emitted with the bucket counts as
+// positional columns. The scenario context (workers, payload, load) is embedded
+// in the row so each line is self-describing when extracted from a mixed file.
+func cpHistogram(label string, reportCSV bool, workers int, payload, ioMode string, ns []int64) {
 	type bucket struct {
-		label  string
-		lo, hi int64 // nanosecond boundaries [lo, hi)
+		label    string // human-readable range label
+		csvLabel string // CSV-safe column name (no spaces, µ, or special chars)
+		lo, hi   int64  // nanosecond boundaries [lo, hi)
 	}
 	buckets := []bucket{
-		{"  <100µs", 0, 100_000},
-		{"100-500µs", 100_000, 500_000},
-		{"0.5-1ms  ", 500_000, 1_000_000},
-		{"  1-5ms  ", 1_000_000, 5_000_000},
-		{"  5-10ms ", 5_000_000, 10_000_000},
-		{" 10-50ms ", 10_000_000, 50_000_000},
-		{" 50-100ms", 50_000_000, 100_000_000},
-		{"  >100ms ", 100_000_000, math.MaxInt64},
+		{"  <100µs", "lt_100us", 0, 100_000},
+		{"100-500µs", "100_500us", 100_000, 500_000},
+		{"0.5-1ms  ", "500us_1ms", 500_000, 1_000_000},
+		{"  1-5ms  ", "1_5ms", 1_000_000, 5_000_000},
+		{"  5-10ms ", "5_10ms", 5_000_000, 10_000_000},
+		{" 10-50ms ", "10_50ms", 10_000_000, 50_000_000},
+		{" 50-100ms", "50_100ms", 50_000_000, 100_000_000},
+		{"  >100ms ", "gt_100ms", 100_000_000, math.MaxInt64},
 	}
 
 	counts := make([]int64, len(buckets))
@@ -1390,12 +1397,27 @@ func cpHistogram(label, ctx string, ns []int64) {
 	}
 
 	total := int64(len(ns))
+
+	if reportCSV {
+		// histogram,<type>,<workers>,<payload>,<load>,<bucket0>,...,<bucket7>
+		// Type is lowercase so awk/grep patterns are simple: grep '^histogram,acquire'
+		fmt.Printf("histogram,%s,%d,%s,%s",
+			strings.ToLower(label), workers, payload, ioMode)
+		for _, c := range counts {
+			fmt.Printf(",%d", c)
+		}
+		fmt.Println()
+		return
+	}
+
 	var maxCount int64
 	for _, c := range counts {
 		if c > maxCount {
 			maxCount = c
 		}
 	}
+
+	ctx := fmt.Sprintf("workers=%d  payload=%s  load=%s", workers, payload, ioMode)
 
 	// width is the number of block characters (█ / ░) in the bar area.
 	// 42 fits comfortably in an 80-column terminal alongside the label and
@@ -1489,6 +1511,10 @@ func (t *ConnectionPoolTest) printCSVHeaders() {
 		"thread_handling,mysql_conn_before,mysql_created_before,mysql_conn_after," +
 		"mysql_cached_before,mysql_cached_after,mysql_new_threads,thread_cache_size,cache_hit_pct," +
 		"tp_queued_before,tp_queued_after,tp_queued_delta")
+	if t.Histogram {
+		fmt.Println("# histogram,type,workers,payload,load," +
+			"lt_100us,100_500us,500us_1ms,1_5ms,5_10ms,10_50ms,50_100ms,gt_100ms")
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

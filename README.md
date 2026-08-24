@@ -511,11 +511,12 @@ grep '^summary,' b.csv | awk -F, '{
 
 ### CSV format reference
 
-Two row types share stdout. Separate them with `grep`:
+Up to three row types share stdout. Separate them with `grep`:
 
 ```bash
-grep '^interval,' results.csv   # live per-interval rows
-grep '^summary,'  results.csv   # one aggregate row per scenario
+grep '^interval,'  results.csv   # live per-interval rows
+grep '^summary,'   results.csv   # one aggregate row per scenario
+grep '^histogram,' results.csv   # latency distribution rows (requires --histogram)
 ```
 
 #### `interval,` row — emitted every `--reportInterval` seconds
@@ -633,6 +634,33 @@ These columns cover both threading models. Check `thread_handling` to know which
 | `mysql_new_threads` | count | Delta `Threads_created` (`after − before`). Non-zero means the cache could not supply all threads and the OS had to create new ones — a sign the cache is too small or connections exceeded `thread_cache_size`. |
 | `cache_hit_pct` | % | `(ΔConnections − ΔThreads_created) / ΔConnections × 100`. 100 % = every new connection reused a cached thread. Below 80 % = the cache is undersized for this concurrency level. Always `0.0` in `pool-of-threads` mode (the concept does not apply). |
 | `ps_conn_avg_ns` | ns | Average server-side socket accept latency from `performance_schema.events_waits_summary_global_by_event_name` (`wait/io/socket/sql/client_connection`). Measures the TCP accept cost on the server; complements `acq_avg_ns` which includes network RTT, authentication, and session setup on top. `0` when performance_schema is disabled or the event is not instrumented. |
+
+#### `histogram,` row — emitted after each scenario when `--histogram` is active
+
+Two rows are written per scenario (one for acquire, one for release), immediately after the `summary,` row. Each row carries the full scenario context so it is self-describing when extracted from a mixed file.
+
+```bash
+grep '^histogram,acquire,' results.csv   # acquire latency distributions only
+grep '^histogram,release,' results.csv   # release latency distributions only
+```
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `histogram` | — | Row-type tag. |
+| `type` | label | `acquire` or `release` — which latency phase this row describes. |
+| `workers` | count | Concurrent goroutines for this scenario. |
+| `payload` | label | Read payload size: `small`, `medium`, `large`, or `xlarge`. |
+| `load` | label | `read-only` or `read+write(<N>B)` where `<N>` is `--writeSize`. |
+| `lt_100us` | count | Operations that completed in **under 100 µs**. Typical for pool-reuse hits: the connection was idle in the pool, no OS or network work needed. |
+| `100_500us` | count | Operations in the **100 – 500 µs** range. Pool reuse with minor overhead: GC pause, large pool scan, or very short network RTT. |
+| `500us_1ms` | count | Operations in the **500 µs – 1 ms** range. Border between pool reuse and new-connection territory. |
+| `1_5ms` | count | Operations in the **1 – 5 ms** range. Typically a new TCP connection being served from the MySQL thread cache (no OS thread creation). |
+| `5_10ms` | count | Operations in the **5 – 10 ms** range. New connection with mild server load or slightly elevated thread-cache miss. |
+| `10_50ms` | count | Operations in the **10 – 50 ms** range. New OS thread creation, or noticeable network latency. Non-zero counts here are worth investigating. |
+| `50_100ms` | count | Operations in the **50 – 100 ms** range. High contention, OS thread creation under load, or WAN latency. |
+| `gt_100ms` | count | Operations that took **over 100 ms**. Severe contention, connection refusals, or network issues. Any non-zero value is a red flag. |
+
+A bimodal distribution (high counts in `lt_100us` **and** in `1_5ms` or above, with a valley between) indicates two populations coexisting: fast pool-reuse hits and slow new-connection paths. This pattern means `--maxIdleConns` is too small to absorb all concurrent workers — some must wait for a new connection while others reuse cached ones.
 
 ---
 
