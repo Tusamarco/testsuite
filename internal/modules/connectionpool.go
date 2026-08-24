@@ -619,7 +619,7 @@ func (t *ConnectionPoolTest) runScenario(db *sql.DB, workers int, scratchTable s
 
 	t.printScenarioReport(workers, allResults, elapsed, mysqlBefore, mysqlAfter, appBefore, appAfter)
 	if !t.ReportCSV || t.Histogram {
-		t.printHistograms(allResults)
+		t.printHistograms(workers, allResults)
 	}
 }
 
@@ -1331,7 +1331,7 @@ func (t *ConnectionPoolTest) printScenarioReport(
 // latency is unimodal (healthy), bimodal (pool pressure causing two distinct
 // populations: fast reuse vs slow wait), or has a long tail (intermittent slow
 // connections). This is not visible from percentiles alone.
-func (t *ConnectionPoolTest) printHistograms(results []cpResult) {
+func (t *ConnectionPoolTest) printHistograms(workers int, results []cpResult) {
 	acq := make([]int64, 0, len(results))
 	rel := make([]int64, 0, len(results))
 	for _, r := range results {
@@ -1340,8 +1340,17 @@ func (t *ConnectionPoolTest) printHistograms(results []cpResult) {
 			rel = append(rel, r.releaseNs)
 		}
 	}
-	cpHistogram("Acquire", acq)
-	cpHistogram("Release", rel)
+
+	// Build a context string that identifies the scenario so that histograms
+	// remain self-descriptive when exported or grepped from a mixed CSV file.
+	ioMode := "read-only"
+	if t.WriteSize > 0 {
+		ioMode = fmt.Sprintf("read+write(%dB)", t.WriteSize)
+	}
+	ctx := fmt.Sprintf("workers=%d  payload=%s  load=%s", workers, t.PayloadSize, ioMode)
+
+	cpHistogram("Acquire", ctx, acq)
+	cpHistogram("Release", ctx, rel)
 }
 
 // cpHistogram prints a horizontal bar chart with fixed logarithmic-ish buckets.
@@ -1354,7 +1363,7 @@ func (t *ConnectionPoolTest) printHistograms(results []cpResult) {
 // Bar lengths are normalised to the busiest bucket so that the chart fills the
 // terminal width regardless of distribution shape (a single dominant bucket
 // does not squash all other bars to zero).
-func cpHistogram(label string, ns []int64) {
+func cpHistogram(label, ctx string, ns []int64) {
 	type bucket struct {
 		label  string
 		lo, hi int64 // nanosecond boundaries [lo, hi)
@@ -1393,7 +1402,7 @@ func cpHistogram(label string, ns []int64) {
 	// percentage columns.
 	const width = 42
 	sep := strings.Repeat("─", 70)
-	fmt.Printf("\n  %s Latency Histogram (%d samples)\n", label, total)
+	fmt.Printf("\n  %s Latency Histogram  [%s]  (%d samples)\n", label, ctx, total)
 	fmt.Println("  " + sep)
 	for i, b := range buckets {
 		c := counts[i]
